@@ -1,0 +1,2588 @@
+REPORT zknobel_en21_advent_publish LINE-SIZE 200 NO STANDARD PAGE HEADING.
+INCLUDE <cl_alv_control>.
+
+CONSTANTS: mc_middle      TYPE i VALUE 30,
+           c_color_trunk  TYPE i VALUE 7,
+           c_color_branch TYPE i VALUE 5,
+           c_color_star   TYPE i VALUE 3,
+           c_color_candle TYPE i VALUE 6,
+           c_color_moon   TYPE i VALUE 8.
+
+
+CLASS lcl_application DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      main.
+ENDCLASS.
+CLASS ghost_of_christmas DEFINITION ABSTRACT .
+  PUBLIC SECTION.
+    TYPES: BEGIN OF mts_data,
+             x           TYPE i,
+             y           TYPE i,
+             color       TYPE i,
+             intensified TYPE i,
+           END OF mts_data,
+           mtt_data TYPE SORTED TABLE OF mts_data WITH UNIQUE KEY y x.
+    METHODS:
+      show ABSTRACT,
+      create_docker   IMPORTING iv_ratio       TYPE clike
+                      RETURNING VALUE(ro_dock) TYPE REF TO cl_gui_docking_container,
+      create_output   RETURNING VALUE(rt_data) TYPE mtt_data,
+      get_height      IMPORTING it_data TYPE mtt_data
+                      EXPORTING height  TYPE i,
+      create_branches IMPORTING iv_width       TYPE i
+                                iv_y           TYPE i
+                      RETURNING VALUE(rt_data) TYPE mtt_data,,
+    create_starfield IMPORTING it_data        TYPE mtt_data
+    RETURNING VALUE(rt_data) TYPE mtt_data,
+    overlay_sky     CHANGING  ct_data TYPE mtt_data,
+    build_moon IMPORTING x      TYPE numeric
+    y      TYPE numeric
+    radius TYPE i.
+    CLASS-DATA:
+      mt_data TYPE mtt_data.
+
+ENDCLASS.
+DATA: christmas TYPE STANDARD TABLE OF REF TO ghost_of_christmas WITH NON-UNIQUE DEFAULT KEY.
+PERFORM test.
+
+CLASS ghost_of_christmas_past DEFINITION INHERITING FROM ghost_of_christmas.
+  PUBLIC SECTION.
+
+    METHODS:
+      show REDEFINITION.
+ENDCLASS.
+CLASS ghost_of_christmas_present DEFINITION INHERITING FROM ghost_of_christmas.
+  PUBLIC SECTION.
+    METHODS:
+      show REDEFINITION.
+*      build_fieldcat IMPORTING it_table       TYPE STANDARD TABLE
+*                               iv_width       TYPE i
+*                     RETURNING VALUE(rt_fcat) TYPE lvc_t_fcat.
+ENDCLASS.
+CLASS ghost_of_chrístmas_to_come DEFINITION INHERITING FROM ghost_of_christmas.
+  PUBLIC SECTION.
+    METHODS:
+      show REDEFINITION.
+ENDCLASS.
+
+
+CLASS easter DEFINITION FINAL.
+  PUBLIC SECTION.
+    TYPES: moon_phase TYPE char1.
+    TYPES: BEGIN OF moon_day,
+             date       TYPE sydatum,
+             moon_phase TYPE moon_phase,
+           END OF moon_day.
+    CONSTANTS: moon_phase_full       TYPE moon_phase VALUE 'V',
+               moon_phase_waning     TYPE moon_phase VALUE 'A',
+               moon_phase_increasing TYPE moon_phase VALUE 'Z',
+               moon_phase_new_moon   TYPE moon_phase VALUE 'N'.
+    CLASS-METHODS:
+      get_moon_phase IMPORTING date TYPE datum RETURNING VALUE(moon_phase) TYPE moon_phase,
+      class_constructor,
+      get_easterdate RETURNING VALUE(easterdate) TYPE sydatum.
+    CLASS-DATA: moon_phases TYPE HASHED TABLE OF moon_day WITH UNIQUE KEY date.
+ENDCLASS.
+
+CLASS moon DEFINITION.
+  PUBLIC SECTION.
+    CONSTANTS: x0     TYPE i VALUE 48,
+               y0     TYPE i VALUE 8,
+               radius TYPE i VALUE 5.
+    CLASS-METHODS:
+      is_in_moon IMPORTING x                 TYPE i
+                           y                 TYPE i
+                 RETURNING VALUE(rv_in_moon) TYPE abap_bool,
+      is_lit     IMPORTING x                TYPE i
+                           y                TYPE i
+                           moon_phase       TYPE easter=>moon_phase
+                 RETURNING VALUE(rv_is_lit) TYPE abap_bool.
+
+ENDCLASS.
+
+
+CLASS easteranimal DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      can_lay_egg RETURNING VALUE(can_lay_egg) TYPE abap_bool,
+      should_be_sacrified RETURNING VALUE(should_be_sacrified) TYPE abap_bool,
+      is_seventh_egg IMPORTING io_easteregg              TYPE REF TO easteregg
+                     RETURNING VALUE(is_surprise_animal) TYPE REF TO easteranimal.
+ENDCLASS.
+
+CLASS easterlamb DEFINITION INHERITING FROM easteranimal.
+  PUBLIC SECTION.
+    METHODS:
+      should_be_sacrified REDEFINITION.
+ENDCLASS.
+
+CLASS easterchicken DEFINITION INHERITING FROM easteranimal.
+  PUBLIC SECTION.
+    METHODS:
+      can_lay_egg REDEFINITION.
+ENDCLASS.
+
+CLASS easterbunny DEFINITION INHERITING FROM easteranimal.
+  PUBLIC SECTION.
+    METHODS:
+      can_lay_egg REDEFINITION.
+ENDCLASS.
+
+CLASS easteregg DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      constructor IMPORTING legetier TYPE REF TO easteranimal,
+      was_layed_by RETURNING VALUE(easteranimal) TYPE REF TO easteranimal.
+  PRIVATE SECTION.
+    DATA: animal_which_layed_the_egg TYPE REF TO easteranimal.
+
+ENDCLASS.
+
+
+START-OF-SELECTION.
+  lcl_application=>main( ).
+
+INITIALIZATION.
+  PERFORM initialization.
+
+
+FORM get_header_text USING    xmas_version TYPE clike
+                     CHANGING header_text  TYPE string.
+  CLEAR header_text.
+  IF   xmas_version(7)  = 'present'
+    OR xmas_version(4)  = 'past'
+    OR xmas_version(7)  = 'to come'.
+    header_text = |*  *  *  Christmas { xmas_version }  *  *  *|.
+  ELSE.
+    header_text = 'ERROR'.
+  ENDIF.
+ENDFORM.
+
+CLASS lcl_application IMPLEMENTATION.
+  METHOD main.
+
+    LOOP AT christmas INTO DATA(christmas).
+      christmas->show( ).
+    ENDLOOP.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS ghost_of_christmas_past IMPLEMENTATION.
+  METHOD show.
+    DATA: lv_whitespace TYPE char1,
+          lv_char       TYPE char1,
+          title         TYPE string.
+
+    PERFORM get_header_text USING    'past'
+                            CHANGING title.
+    lv_whitespace = cl_abap_conv_in_ce=>uccpi( uccp = 160 ).
+*--------------------------------------------------------------------*
+* Christmas past should be a christmas tree with candles - as list output
+*--------------------------------------------------------------------*
+    DATA(lv_start) = mc_middle - strlen( title ) / 2.
+    WRITE: AT /lv_start title COLOR 3 INVERSE ON.
+    SKIP 2.
+    mt_data = create_output( ).
+    DO.
+      DATA(lv_y) = sy-index.
+      LOOP AT mt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE y = lv_y.
+        POSITION <ls_data>-x.
+        CASE <ls_data>-color.
+          WHEN c_color_trunk.
+            lv_char = ':'.
+          WHEN c_color_branch.
+            lv_char = '.'.
+          WHEN c_color_star.
+            lv_char = '*'.
+          WHEN c_color_candle.
+            lv_char = 'i'.
+          WHEN c_color_moon.
+            lv_char = 'M'.
+          WHEN OTHERS.
+            lv_char = lv_whitespace.
+        ENDCASE.
+        WRITE AT <ls_data>-x(1) lv_char NO-GAP COLOR = <ls_data>-color INTENSIFIED = <ls_data>-intensified.
+      ENDLOOP.
+      IF sy-subrc <> 0.
+        breakrc.
+        EXIT.
+      ENDIF.
+      NEW-LINE.
+    ENDDO.
+
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS easter IMPLEMENTATION.
+  METHOD get_moon_phase.
+    CONSTANTS: zyklus TYPE f VALUE '29.530588861'. " Orbital period of moon in days
+    DATA: seconds TYPE f,
+          anteil  TYPE f.
+    cl_abap_tstmp=>td_subtract( EXPORTING
+                                  date1    = '19991222'
+                                  time1    = '183118'
+                                  date2    = date
+                                  time2    = '000000'
+                                IMPORTING
+                                  res_secs = seconds
+                               ).
+    anteil =  ( zyklus / 2 - seconds MOD ( zyklus * 86400 ) / 86400 ) / ( zyklus / 2 ) * 100.
+
+    IF abs( anteil ) > 92.
+      moon_phase = moon_phase_full.
+    ELSEIF abs( anteil ) < 8.
+      moon_phase = moon_phase_new_moon.
+    ELSEIF anteil > 0.
+      moon_phase = moon_phase_inrceasing.
+    ELSE.
+      moon_phase = moon_phase_waning.
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD get_easterdate.
+    CALL FUNCTION EASTER_GET_DATE
+      EXPORTING
+        year         = sy-datum(4)
+      IMPORTING
+        easterdate   = easterdate
+      EXCEPTIONS
+        year_invalid = 1
+        OTHERS       = 2.
+
+  ENDMETHOD.
+
+  METHOD class_constructor.
+    DATA: ls_day LIKE LINE OF easter=>moon_phases,
+          date   TYPE datum.
+    date = sy-datum.
+    date+4 = '0101'.
+
+    WHILE date(4) = sy-datum(4).
+      ls_day-date = date.
+      ls_day-moon_phase = get_moon_phase( date ).
+      INSERT ls_day INTO TABLE moon_phases.
+      date = date + 1.
+
+    ENDWHILE.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS easteregg IMPLEMENTATION.
+  METHOD constructor.
+    me->animal_which_layed_the_egg = legetier.
+  ENDMETHOD.
+  METHOD was_layed_by.
+    easteranimal = me->animal_which_layed_the_egg.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS easteranimal IMPLEMENTATION.
+  METHOD can_lay_egg.
+    can_lay_egg = abap_false.
+  ENDMETHOD.
+  METHOD should_be_sacrified.
+    should_be_sacrified = abap_false.
+  ENDMETHOD.
+  METHOD is_seventh_egg.
+* Todo for easter
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS easterlamb IMPLEMENTATION.
+  METHOD should_be_sacrified.
+    should_be_sacrified = abap_true.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS easterbunny IMPLEMENTATION.
+  METHOD can_lay_egg.
+    can_lay_egg = abap_true.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS easterchicken IMPLEMENTATION.
+  METHOD can_lay_egg.
+    can_lay_egg = abap_true.
+  ENDMETHOD.
+ENDCLASS.
+
+
+CLASS ghost_of_christmas_present IMPLEMENTATION.
+  METHOD show.
+    TYPES: BEGIN OF lts_alv,
+             c00     TYPE char1,
+             c01     TYPE char1,
+             c02     TYPE char1,
+             c03     TYPE char1,
+             c04     TYPE char1,
+             c05     TYPE char1,
+             c06     TYPE char1,
+             c07     TYPE char1,
+             c08     TYPE char1,
+             c09     TYPE char1,
+
+             c10     TYPE char1,
+             c11     TYPE char1,
+             c12     TYPE char1,
+             c13     TYPE char1,
+             c14     TYPE char1,
+             c15     TYPE char1,
+             c16     TYPE char1,
+             c17     TYPE char1,
+             c18     TYPE char1,
+             c19     TYPE char1,
+
+             c20     TYPE char1,
+             c21     TYPE char1,
+             c22     TYPE char1,
+             c23     TYPE char1,
+             c24     TYPE char1,
+             c25     TYPE char1,
+             c26     TYPE char1,
+             c27     TYPE char1,
+             c28     TYPE char1,
+             c29     TYPE char1,
+
+             c30     TYPE char1,
+             c31     TYPE char1,
+             c32     TYPE char1,
+             c33     TYPE char1,
+             c34     TYPE char1,
+             c35     TYPE char1,
+             c36     TYPE char1,
+             c37     TYPE char1,
+             c38     TYPE char1,
+             c39     TYPE char1,
+
+             c40     TYPE char1,
+             c41     TYPE char1,
+             c42     TYPE char1,
+             c43     TYPE char1,
+             c44     TYPE char1,
+             c45     TYPE char1,
+             c46     TYPE char1,
+             c47     TYPE char1,
+             c48     TYPE char1,
+             c49     TYPE char1,
+
+             c50     TYPE char1,
+             c51     TYPE char1,
+             c52     TYPE char1,
+             c53     TYPE char1,
+             c54     TYPE char1,
+             c55     TYPE char1,
+             c56     TYPE char1,
+             c57     TYPE char1,
+             c58     TYPE char1,
+             c59     TYPE char1,
+
+             c60     TYPE char1,
+             c61     TYPE char1,
+             c62     TYPE char1,
+             c63     TYPE char1,
+             c64     TYPE char1,
+             c65     TYPE char1,
+             c66     TYPE char1,
+             c67     TYPE char1,
+             c68     TYPE char1,
+             c69     TYPE char1,
+
+             c70     TYPE char1,
+             c71     TYPE char1,
+             c72     TYPE char1,
+             c73     TYPE char1,
+             c74     TYPE char1,
+             c75     TYPE char1,
+             c76     TYPE char1,
+             c77     TYPE char1,
+             c78     TYPE char1,
+             c79     TYPE char1,
+
+             c80     TYPE char1,
+             c81     TYPE char1,
+             c82     TYPE char1,
+             c83     TYPE char1,
+             c84     TYPE char1,
+             c85     TYPE char1,
+             c86     TYPE char1,
+             c87     TYPE char1,
+             c88     TYPE char1,
+             c89     TYPE char1,
+
+             c90     TYPE char1,
+             c91     TYPE char1,
+             c92     TYPE char1,
+             c93     TYPE char1,
+             c94     TYPE char1,
+             c95     TYPE char1,
+             c96     TYPE char1,
+             c97     TYPE char1,
+             c98     TYPE char1,
+             c99     TYPE char1,
+
+             t_color TYPE lvc_t_scol,
+             t_style TYPE lvc_t_styl,
+           END OF lts_alv.
+    DATA: lt_alv     TYPE STANDARD TABLE OF lts_alv WITH NON-UNIQUE DEFAULT KEY,
+          lt_fcat    TYPE lvc_t_fcat,
+          lr_data    TYPE REF TO data,
+          lv_char    TYPE char1,
+          lv_width   TYPE i,
+          grid_title TYPE string,
+          grid       TYPE REF TO cl_gui_alv_grid.
+    FIELD-SYMBOLS:<lt_data> TYPE STANDARD TABLE.
+*--------------------------------------------------------------------*
+* Christmas past should be a christmas tree with candles like the list output - desplayed using an ALV
+*--------------------------------------------------------------------*
+* Set width
+    lv_width = 2 * mc_middle.
+* create docking container
+    DATA(lo_dock) = me->create_docker( '0.5' ).
+* get data
+    mt_data = create_output( ).
+* Build fieldcatalog
+    PERFORM build_fieldcat TABLES lt_fcat
+                                  lt_alv
+                           USING  lv_width.
+* Build enhanced ALV table including fields for color and style
+    get_height( EXPORTING it_data = mt_data IMPORTING height = DATA(height) ).
+    DO height TIMES.
+*    DO get_height( mt_data ) TIMES.
+      APPEND INITIAL LINE TO lt_alv.
+    ENDDO.
+    LOOP AT mt_data ASSIGNING FIELD-SYMBOL(<ls_data>).
+      READ TABLE lt_alv INDEX <ls_data>-y ASSIGNING FIELD-SYMBOL(<ls_alv>).
+      ASSIGN COMPONENT <ls_data>-x OF STRUCTURE <ls_alv> TO FIELD-SYMBOL(<lv_cell>).
+      CASE <ls_data>-color.
+        WHEN c_color_trunk.
+          lv_char = ':'.
+        WHEN c_color_branch.
+          lv_char = '.'.
+        WHEN c_color_star.
+          lv_char = '*'.
+        WHEN c_color_candle.
+          lv_char = 'i'.
+        WHEN c_color_moon.
+          lv_char = 'M'.
+        WHEN OTHERS.
+          lv_char = space.
+      ENDCASE.
+      <lv_cell> = lv_char.
+      APPEND VALUE #( fname = |C{ CONV numc2( <ls_data>-x - 1 )}| color = VALUE #( col = <ls_data>-color int = <ls_data>-intensified ) ) TO <ls_alv>-t_color.
+* bold and centered
+      INSERT VALUE #( fieldname = |C{ CONV numc2( <ls_data>-x - 1 ) }| style = alv_style_align_center_center + alv_style_font_bold  ) INTO TABLE <ls_alv>-t_style.
+    ENDLOOP.
+
+    PERFORM get_header_text USING    'present'
+                            CHANGING grid_title.
+* A little  to the right to make it a bit more centered
+    DATA(lv_start) = mc_middle.
+    DO lv_start TIMES.
+      CONCATENATE ` ` grid_title INTO grid_title.
+    ENDDO.
+
+* Create grid for alv output
+    grid = NEW cl_gui_alv_grid( i_parent = lo_dock ).
+
+    CREATE DATA lr_data LIKE lt_alv.
+    ASSIGN lr_data->* TO <lt_data>.
+    <lt_data> = lt_alv.
+* Fieldcatalog
+    PERFORM build_fieldcat TABLES lt_fcat
+                                  <lt_data>
+                           USING  lv_width.
+* Tree darstellen
+    grid = NEW cl_gui_alv_grid( i_parent = lo_dock ).
+    grid->set_table_for_first_display( EXPORTING
+*                                           i_buffer_active               = i_buffer_active      " Buffering Active
+*                                           i_bypassing_buffer            = i_bypassing_buffer   " Switch Off Buffer
+*                                           i_consistency_check           = i_consistency_check  " Starting Consistency Check for Interface Error Recognition
+*                                           i_structure_name              = i_structure_name     " Internal Output Table Structure Name
+*                                           is_variant                    = is_variant           " Layout
+*                                           i_save                        = i_save               " Save Layout
+*                                           i_default                     = 'X'                  " Default Display Variant
+                                           is_layout                     = VALUE #( ctab_fname = 'T_COLOR'
+                                                                                    stylefname = 'T_STYLE'
+                                                                                    no_hgridln = 'X'
+                                                                                    no_vgridln = 'X'
+                                                                                    no_headers = 'X'
+                                                                                    grid_title = grid_title
+                                                                                  )
+*                                           is_print                      = is_print             " Print Control
+*                                           it_special_groups             = it_special_groups    " Field Groups
+                                           it_toolbar_excluding          = VALUE #( ( cl_gui_alv_grid=>mc_fc_excl_all ) ) " Ohne toolbar
+*                                           it_hyperlink                  = it_hyperlink         " Hyperlinks
+*                                           it_alv_graphics               = it_alv_graphics      " Table of Structure DTC_S_TC
+*                                           it_except_qinfo               = it_except_qinfo      " Table for Exception Quickinfo
+*                                           ir_salv_adapter               = ir_salv_adapter      " Interface ALV Adapter
+                                         CHANGING
+                                           it_outtab                     = <lt_data>            " Output Table
+                                           it_fieldcatalog               = lt_fcat      " Field Catalog
+                                         EXCEPTIONS
+                                           invalid_parameter_combination = 1                    " Wrong Parameter
+                                           program_error                 = 2                    " Program Errors
+                                           too_many_lines                = 3                    " Too many Rows in Ready for Input Grid
+                                           OTHERS                        = 4
+                                       ).
+  ENDMETHOD.
+ENDCLASS.
+
+* This is mean....
+DEFINE preform.
+  WRITE:/ 'ERROR ERROR ERROR' COLOR 6.
+  WRITE:/ '&1' COLOR 3.
+  WRITE '&2' COLOR 3.
+  WRITE '&3' COLOR 3.
+  WRITE '&4' COLOR 3.
+  WRITE '&5' COLOR 3.
+  WRITE '&6' COLOR 3.
+  WRITE:/ 'ERROR ERROR ERROR' COLOR 6.
+END-OF-DEFINITION.
+
+
+CLASS ghost_of_christmas IMPLEMENTATION.
+  METHOD create_docker.
+    DATA: lv_ratio TYPE i.
+    lv_ratio = iv_ratio * 100.
+    ro_dock = NEW cl_gui_docking_container( side                    = cl_gui_docking_container=>dock_at_right
+                                            ratio                   = lv_ratio
+                                            no_autodef_progid_dynnr = 'X'
+                                          ).
+  ENDMETHOD.
+
+  METHOD create_output.
+    DATA: lv_height TYPE i,
+          lt_data   TYPE mtt_data.
+
+
+    get_height( EXPORTING it_data = rt_data IMPORTING height = lv_height ).
+    CLEAR lt_data.
+    PERFORM create_branches USING lv_height 2 CHANGING lt_data.
+    INSERT LINES OF lt_data INTO TABLE rt_data.
+
+    get_height( EXPORTING it_data = rt_data IMPORTING height = lv_height ).
+    CLEAR lt_data.
+    PERFORM create_branches USING lv_height 4 CHANGING lt_data.
+    INSERT LINES OF lt_data INTO TABLE rt_data.
+
+    get_height( EXPORTING it_data = rt_data IMPORTING height = lv_height ).
+    CLEAR lt_data.
+    preform create_branches USING lv_height 3 CHANGING lt_data.
+    INSERT LINES OF lt_data INTO TABLE rt_data.
+
+    get_height( EXPORTING it_data = rt_data IMPORTING height = lv_height ).
+    CLEAR lt_data.
+    PERFORM create_branches USING lv_height 5 CHANGING lt_data.
+    INSERT LINES OF lt_data INTO TABLE rt_data.
+
+    get_height( EXPORTING it_data = rt_data IMPORTING height = lv_height ).
+    CLEAR lt_data.
+    PERFORM create_branches USING lv_height 7 CHANGING lt_data.
+    INSERT LINES OF lt_data INTO TABLE rt_data.
+
+    get_height( EXPORTING it_data = rt_data IMPORTING height = lv_height ).
+    CLEAR lt_data.
+    PERFORM create_branches USING lv_height 10 CHANGING lt_data.
+    INSERT LINES OF lt_data INTO TABLE rt_data.
+
+
+    get_height( EXPORTING it_data = rt_data IMPORTING height = lv_height ).
+    CLEAR lt_data.
+    PERFORM create_trunk USING lv_height
+                         CHANGING lt_data.
+    INSERT LINES OF lt_data INTO TABLE rt_data.
+
+    overlay_sky( CHANGING ct_data = rt_data ).
+  ENDMETHOD.
+
+  METHOD get_height.
+    LOOP AT it_data ASSIGNING FIELD-SYMBOL(<ls_data>).
+      IF <ls_data>-y > height.
+        height = <ls_data>-x.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD create_branches.
+    DATA: lv_y              TYPE i,
+          lv_internal_width TYPE i,
+          lv_color          TYPE i,
+          lv_intensified    TYPE i.
+
+    lv_y = lv_y + 1.
+    INSERT VALUE #( x = mc_middle
+                    y = iv_y + lv_y
+                    color = c_color_trunk
+                      intensified = 1
+                   ) INTO TABLE rt_data.
+    DO iv_width TIMES.
+      lv_internal_width = sy-index.
+      lv_y = lv_y + 1.
+      INSERT VALUE #( x = mc_middle
+                      y = iv_y + lv_y
+                      color = c_color_branch
+                      intensified = 1
+                     ) INTO TABLE rt_data.
+      DO lv_internal_width TIMES.
+        IF sy-index = lv_internal_width - 1 AND sy-index MOD 3 = 0.
+          lv_color = c_color_candle.
+          lv_intensified = 0.
+        ELSE.
+          lv_color = c_color_branch.
+          lv_intensified = 1.
+        ENDIF.
+        INSERT VALUE #( x = mc_middle + sy-index
+                        y = iv_y + lv_y
+                        color = lv_color
+                        intensified = lv_intensified
+                       ) INTO TABLE rt_data.
+        INSERT VALUE #( x = mc_middle - sy-index
+                        y = iv_y + lv_y
+                        color = lv_color
+                        intensified = lv_intensified
+                       ) INTO TABLE rt_data.
+      ENDDO.
+*
+    ENDDO.
+  ENDMETHOD.
+
+  METHOD create_starfield.
+    DATA: lc_stardensity TYPE i VALUE 20,   "star field density
+          lv_color       TYPE i,            "color
+          lv_intensified TYPE i,            "intensified
+          lv_seed        TYPE i VALUE 22,   "seed for random numbers
+          lv_factor      TYPE f VALUE 1.    "factor
+    DATA(lv_width) = 2 * mc_middle.
+    get_height( EXPORTING it_data = it_data IMPORTING height = DATA(lv_height) ).
+    DATA(lv_colorwidth) = lv_height DIV 6.
+    DO lv_height TIMES.
+      DATA(lv_y) = sy-index.
+      DATA(lo_rnd) =  cl_abap_random_int=>create( seed = lv_seed min = 0 max = lc_stardensity * lv_factor ).
+      lv_seed = lv_seed + 1.
+      lv_factor = lv_factor * 11 / 10.
+
+      DO lv_width TIMES.
+        DATA(lv_x) = sy-index.
+* stars
+        IF lv_y <= 20 AND  lo_rnd->get_next( ) MOD ( lc_stardensity * lv_y ) = 0.
+          INSERT VALUE #( x           = lv_x
+                          y           = lv_y
+                         ) INTO TABLE rt_data.
+        ENDIF.
+      ENDDO.
+    ENDDO.
+* Tree hides stars --> stars not to be displayed in tree
+    LOOP AT rt_data ASSIGNING FIELD-SYMBOL(<ls_data>).
+      READ TABLE it_data TRANSPORTING NO FIELDS WITH TABLE KEY x = <ls_data>-x
+                                                               y = <ls_data>-y.
+      IF sy-subrc = 0.
+        DELETE rt_data.
+      ENDIF.
+* Only in the sky --> set star color
+      <ls_data>-color = c_color_star.
+      <ls_data>-intensified = 1.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD overlay_sky.
+
+    DATA: lc_stardensity  TYPE i VALUE 20,   "star field density
+          lv_color        TYPE i,            "color
+          lv_intensified  TYPE i,            "intensified
+          lv_color1       TYPE i,            "color 1
+          lv_intensified1 TYPE i,            "intensified 1
+          lv_color2       TYPE i,            "color 2
+          lv_intensified2 TYPE i,            "intensified 2
+          lv_part         TYPE f,            "part
+          lv_count        TYPE f,            "counter
+          lv_seed         TYPE i VALUE 22,,  "seed for random numbers
+          lv_factor       TYPE f VALUE 1.    "factor
+
+    build_moon( x = 10 y = 10 radius = 5 ).
+
+    DATA(lt_starfield) = create_starfield( ct_data ).
+    DATA(lv_width) = 2 * mc_middle.
+    get_height( EXPORTING it_data = ct_data IMPORTING height = DATA(lv_height) ).
+    DATA(lv_colorwidth) = lv_height DIV 6.
+    DO lv_height TIMES.
+      DATA(lv_y) = sy-index.
+      DATA(lo_rnd) =  cl_abap_random_int=>create( seed = lv_seed min = 0 max = lc_stardensity * lv_factor ).
+      lv_seed = lv_seed + 1.
+      lv_factor = lv_factor * 11 / 10.
+      DATA(lv_colorline1) = ( sy-index - 1 ) DIV lv_colorwidth.
+      CASE lv_colorline1.
+        WHEN 0.
+          lv_color1 = 4. lv_intensified1 = 1.lv_color2 = 2. lv_intensified2 = 1.
+        WHEN 1.
+          lv_color1 = 2. lv_intensified1 = 1.lv_color2 = 4. lv_intensified2 = 0.
+        WHEN 2.
+          lv_color1 = 4. lv_intensified1 = 0.lv_color2 = 1. lv_intensified2 = 0.
+        WHEN 3.
+          lv_color1 = 1. lv_intensified1 = 0.lv_color2 = 1. lv_intensified2 = 1.
+        WHEN 4.
+          lv_color1 = 1. lv_intensified1 = 1.lv_color2 = 0. lv_intensified2 = 0.
+        WHEN OTHERS.
+          EXIT.
+      ENDCASE.
+      DATA(lv_frac) =  ( lv_y - 1 ) MOD lv_colorwidth .
+      CASE lv_frac.
+        WHEN 0.
+          lv_part = 0.
+        WHEN 1.
+          lv_part = 1 / 13.
+        WHEN 2.
+          lv_part = 1 / 11.
+        WHEN 3.
+          lv_part = 1 / 7.
+        WHEN 4.
+          lv_part = 1 / 5.
+        WHEN 5.
+          lv_part = 1 / 3.
+        WHEN 6.
+          lv_part = 1 / 2.
+      ENDCASE.
+      CLEAR lv_count.
+      DO lv_width TIMES.
+        DATA(lv_x) = sy-index.
+        lv_count = lv_count + lv_part.
+        IF lv_count > 1.
+          lv_count       = lv_count - 1.
+          lv_color       = lv_color2.
+          lv_intensified = lv_intensified2.
+        ELSE.
+          lv_color       = lv_color1.
+          lv_intensified = lv_intensified1.
+        ENDIF.
+
+        INSERT VALUE #( x           = lv_x
+                        y           = lv_y
+                        color       = lv_color
+                        intensified = lv_intensified
+                       ) INTO TABLE ct_data ASSIGNING FIELD-SYMBOL(<ls_moon>). " Preparations for moon
+* Moon
+        IF    moon=>is_in_moon( x = lv_x
+                                y = lv_y )
+          AND moon=>is_lit( x = lv_x
+                            y = lv_y
+                            moon_phase = easter=>get_moon_phase( sy-datum ) ).
+          <ls_moon>-color = c_color_moon.
+          <ls_moon>-intensified = 1.
+        ENDIF.
+      ENDDO.
+    ENDDO.
+
+
+    LOOP AT lt_starfield ASSIGNING FIELD-SYMBOL(<ls_starfield>).
+      READ TABLE ct_data ASSIGNING FIELD-SYMBOL(<ls_data_star>) WITH TABLE KEY x = <ls_starfield>-x
+                                                                               y = <ls_starfield>-y.
+      IF sy-subrc = 0.
+        IF <ls_data_star>-color <> c_color_moon.
+          <ls_data_star>-color       = <ls_starfield>-color.
+          <ls_data_star>-intensified = <ls_starfield>-intensified.
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD build_moon.
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS moon IMPLEMENTATION.
+  METHOD is_in_moon.
+    DATA: i TYPE i.
+    i = ( x - x0 ) ** 2 + ( y - y0 ) ** 2.
+    IF i < radius * radius.
+      rv_in_moon = abap_true.
+    ELSE.
+      rv_in_moon = abap_false.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD is_lit.
+    rv_is_lit = abap_false.
+    CASE moon_phase.
+      WHEN easter=>moon_phase_full.
+        rv_is_lit = abap_true.
+*      when ostern=>moon_phase_new_moon.
+      WHEN easter=>moon_phase_waning.
+        IF x <= x0.
+          rv_is_lit = abap_true.
+        ENDIF.
+      WHEN easter=>moon_phase_increasing.
+        IF x >= x0.
+          rv_is_lit = abap_true.
+        ENDIF.
+    ENDCASE.
+  ENDMETHOD.
+ENDCLASS.
+
+end-of-SELECTION.
+modify line 12 line format color 6.
+modify line 12  line value from '  ERROR  ERROR  ERROR  ERROR  ERROR  ERROR' line format color 6.
+
+CONSTANTS: lc_paral1el TYPE i VALUE '36'.
+CLASS ghost_of_chrístmas_to_come IMPLEMENTATION.
+  METHOD show.
+
+    DATA: lv_xstring      TYPE xstring,
+          lv_assigned_url TYPE text1000,
+          lt_soli         TYPE soli_tab,
+          grid_title      TYPE string.
+
+*--------------------------------------------------------------------*
+* Christmas to come is just an animated gif of a christmas tree
+*--------------------------------------------------------------------*
+    DATA(lo_dock) = me->create_docker( '0,25' ).
+    DATA(lo_split) = NEW cl_gui_easy_splitter_container( parent        = lo_dock
+                                                         sash_position = 10 ).
+
+    PERFORM get_header_text USING    'to come'
+                            CHANGING grid_title.
+
+* Info zukünfige Weihnacht
+    DATA(lo_html_info)    = NEW cl_gui_html_viewer( parent = lo_split->top_left_container ).
+    APPEND |<html><head/>| TO lt_soli.
+    APPEND |<body style="overflow:hidden;font-family:'Arial';font-size:16pt;margin:-2;padding:4"><p>| TO lt_soli.
+    APPEND '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;*&nbsp;&nbsp;*&nbsp;&nbsp;&nbsp;&nbsp;Christmas to come&nbsp;&nbsp;&nbsp;&nbsp;*&nbsp;&nbsp;*&nbsp;&nbsp;*' TO lt_soli.
+    APPEND |</p></body></html>| TO lt_soli.
+    lo_html_info->load_data( IMPORTING
+                               assigned_url           = lv_assigned_url
+                             CHANGING
+                               data_table             = lt_soli
+                             EXCEPTIONS
+                               dp_invalid_parameter   = 1                " invalid parameter in a DP call
+                               dp_error_general       = 2                " gerneral error in a DP call
+                               cntl_error             = 3                " error
+                               html_syntax_notcorrect = 4                " HTML data is invalid and check all the tags' syntax
+                               OTHERS                 = 5
+                              ).
+    lo_html_info->show_url( lv_assigned_url ).
+
+
+* Tree
+    DATA(lo_html_picture) = NEW cl_gui_html_viewer( parent = lo_split->bottom_right_container ).
+    lv_xstring =
+       '474946383961DC00FE00F7C100000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '00000000000000000000000000000000000000000000000000'
+    && '000000000000000000000000000000000000FF000413020502'
+    && '010A27040B17030F160718440F1F04031F180C1F340E20290D'
+    && '2B0F032C2A142E3C2C301626301912303B1C304314312A2434'
+    && '1107364F1F370403384B363B170D3D60464C1C134E3A215A53'
+    && '245B26185C40255F5435626733632763673923674C4A6A6665'
+    && '70308A74847C786A497A462A7B5E337D2D1E817E4B83825C8A'
+    && '7C398D6534A27E4BA4825BA4863BA68A77A8A25EA8AF9DA993'
+    && '4DAB6C76AB9566AE50B9B7A65FBEB07AC7B164C8BA95D8C887'
+    && 'DCD0A4E7DEC721FF0B4E45545343415045322E300301000000'
+    && '21F904050A00C1002C00000000DC00FE000008FF0001081C48'
+    && 'B0A0C18308132A5CC8B0A1C383C31E4A9C48B1A2C58B18334A'
+    && '8CA871E0B08F1C3B8A1C49B2A4C9930E410E43B612244B9528'
+    && '63CA9C49B32448632CA7416B89ACA74B9F206B0A1D4AB42800'
+    && '90CD58B2B4368C59539F50817E344AB5AAD58D47554E530A95'
+    && '67CB8F2F615E1D4BF6AA4AB0C8B6F544066D6DD3AF61C18A2D'
+    && '4BB7AECCB368BD31EBF9AD194FB752F186B44BB8F045955157'
+    && '7E63A6EDDDE2954ED7068E8BD7B0E5CB09F146ED790E1AB47B'
+    && 'E794AE942C5AF059CCA85367854B9A5D5B6DDA484B1E8D18E6'
+    && '4BD5B8096B1EDD731B33793A99B5DD3C5B2EE5A3B993979D6A'
+    && '5C32B377E7E4696BC6EC996CD27FBFCE55CEBDA8E09EC9A031'
+    && 'FFB366AD5D3B7EDAB0ED45C618DB75EC95BBCB277AF625346C'
+    && 'D8605383D7EF5FBAFBD47C938E3EF058831D60720535DF8233'
+    && 'FD141533CC8C73CE34ECFCF3CF3CE9BC73CF3EFBE4135B4F06'
+    && '5E271883249E84965CEB41438D36E3C8930F3FFF70E88F3FEF'
+    && 'E8F30D69EB01E6D6698395E823451F25C51B7BEC6143CD34DB'
+    && 'B0E3CF3DFFF4D38F3FF910484D8810CE666565216DF7E39610'
+    && '0D63CC906B69638D37ECE893CF93FFF8D34F3EF9BCF38C357B'
+    && 'E57860693065A9259778AED61336DEC0E68D37E7C033238C16'
+    && '5A38A33FF29033CE38DE6CB34D7AC3F9C4149DA6DD996789F5'
+    && '51C30C36DF4033CD37DFC8E3CF3FFCF0E30FA1869ECA8EA28C'
+    && '4E838D67218AFF46D988AB5D8A6773B1E1A78D3BE78C93DF36'
+    && 'EEBC534F3F30CEF8643CEC50830C7954CAE652A50ADACA256D'
+    && '43AA874D94D388A9CD39DBC073CF3C4D5A788F3EFE70331E79'
+    && 'EFC95AA9B4970E391A84CC687ACE3DDB9087CD361266F84F3E'
+    && 'F7B0C30F3CFC7AC32C9C722EEB557CECE6C91B6F006ADBCDC0'
+    && '8E6AC34D7FF5342A0E3ABBA633F0B9721A8770C2D36607E6C0'
+    && 'D650830D79DFE8F30F3BF85903DBC0CB12F99E76A781ECE3B3'
+    && '6022930C35F56A434D3BDA7873B23529FB532FB34393BC6C8E'
+    && '4EED4573B43697589A8EDA6C9A1F36EDB8538F98D688F30E7A'
+    && '2487CDEC78575A1AF582CD390BE7C9D4D4D3613A2B769D8F74'
+    && '2477238ED8312388F05467CBFF179169B2698A4E3BF0D8B84D'
+    && '9FD8B0C335B35E5B834D3A8BCF0C6DDF0C269858BCD53503CD'
+    && '39DFE4E74E3B279FB3B8E7F1B8130FE8303B47E9DE94E7E620'
+    && '98489E934C33CE38030E39D07C534F3C77FB4A5E375136594F'
+    && '3B53C2DCF1EAA6B56ED5DF0D2126DB5E03B2E34C36E46493CD'
+    && 'F4CD78C30D35D4347A323683AF194FD21B1319D9D3C92BEF1D'
+    && '72CD57AA1434EBB0730F39E498634EF5D944D34C3AE2DCD3F9'
+    && 'C0D87887E9DC4132B2390B7D1F539F503CB61A68FDE42FD058'
+    && '55FDCC418FFB65E31ADF88D29F5A461E71E4C373623390819A'
+    && 'E640B3295024F5A1CDD4BC4219AEC8C653D9B01F3DFE514172'
+    && '5C831DF2F8C73A1E553C6B746371214457ACFFE09242BE9DD0'
+    && '44693B9083A6D6139321C348F1B2060CC9418F1956F082DC58'
+    && '193BBC118F7788E37B25BB9BCBC6E8381FC6AA3808ECD1113B'
+    && '8233671D10410FFA503A3E988C694C4F861674C634FA441E61'
+    && 'BD03360F4BC73ED061C6879171843A72E01AD9D8C09989A836'
+    && 'EA020F329AB18D7D786376D7A05FFDAAA7C737716390DDF086'
+    && 'A6B0F13074E443632FEB463786062165454A646E59241BEB63'
+    && '2517EA4D563A7AA26F3EB30F6EA48C1DD7B886F5F4A82297E9'
+    && 'E38FD6D80636C4B18F743CCE1BE968872AA9B14A66FD2C9A9B'
+    && 'D14E5864891148DAB22B9129CE7BCE859FFCDCA31EF370C73D'
+    && 'F4178D6B4C4373C50BE53D16E78E4192C71BFDA80729CB68FF'
+    && '46530E92196AD9465B8C318D740C2319C930223737F21D3085'
+    && '537228724EC9BAD60F33C9A8519FDAA2A64806445516C81AE8'
+    && 'F087C05C960F514E2943F1900714F5B18D767C03A14F9C4632'
+    && '90B1502069063B7B618A532635A748AE041AC9489237DC71A6'
+    && '0E89471CE651CFB2C8331E8ED9EB71D4188798D0718F7EFCB1'
+    && '1B1ABBD8941E578F7CDC281D33658B4ED458D3CC345232674C'
+    && '97B3760AA2B5E4B427DEA8873BC4910EC57D8E1B8ED3D6EFC8'
+    && 'B38D77E4353F3E3B1952F371376D88716CC3CA4768D4D20C9C'
+    && '90B5AC0A719E5BC72933CA0A5184FC049F3E4BB6A297A5879F'
+    && '03039E374E39A6A461031EC1DA2B00B551527A053527C6806C'
+    && '4A24ABBA82FF3D1447200A22D77605346D6C431C3F240F3AB6'
+    && 'D60D74688C3C2B8AC78B8AA70D43DACD64E42B193A5EE58D9B'
+    && '6CC384B2F588379DE334B7E6AC96314BAB64D2E11BF6B4031D'
+    && 'E288D77EB8150F7418D21BF768C73CEED10D68948C6D43DBE7'
+    && 'C61AC51E827E2419ECCB6E6620F9AE9EACA760DF25CD6545D8'
+    && '5603E7541BF5A8073C9AAB0D7AC8231EF53059C900D98F73FC'
+    && 'C7483EBB8FD85AE9136071A319B3CB8A8007FC17B436955995'
+    && '5DEA5A301BC41AFF4E800434663EEA0139BB19C965F7F02134'
+    && '9E71B86D3CA3873E9C5292A631AF69C4231ED7E54834B6B1E2'
+    && '2E794CC1780B11BAD863E32EFF0E1DEA78EF3BF2998F1FE6E7'
+    && '61F949266C42458E671CD9FF9A27DB46BFF4E18C617CE31DB1'
+    && '5D46448C115B8864778968B5F1B9DADA2C0633B8603D716FDE'
+    && 'D4E1B374B86D1FFDD8C75CC7F13065964C99F732C7389E615F'
+    && 'F2A443688EAE873EBCD116952434B2CC51E3636D06E8192F4D'
+    && 'D0065E6AD80C0CE303F784A84612873618FD8E77EC381E1665'
+    && 'C738DC91A1BC72CF53469E460FD3F3C46FB4A31FF24828D4B4'
+    && '0B12617CC4DAD71E8630548C5D85BD24BC5AA6718DB9ECE51A'
+    && 'C75558FB282E3ADCC16E74EC63D4DB50E58684A6EB722A5345'
+    && 'F6E513A7040ACDFD25831B76CAF6B6079E6D6D0BC3DADB665E'
+    && 'C2CFC69ABC89F05C5D2677B9C5D68E7C74281FBC66346C589B'
+    && '0E7760F51EFED0C7745779E47BE5877BD9FFDBC73A1A953D78'
+    && 'F0D94BDA36F8C1673E736D0300DB38B7F9DFB20432DAAA6EE2'
+    && '408F19844A26B4F2585CB960B6873A96FEB009DF671CDD8207'
+    && '7EA8710E25BB9778D478C793EB211E3E0318213B470EC2F192'
+    && '709C0B84790A5598E5F2066EA07BB960100E8D36A071CC7EA0'
+    && 'D61EEE603479988D0DD1D10B36F720EC98A8010DD8304377F9'
+    && '8047570AA2929A8F3DE703A739B6D1DE735A2AF8C56E777B3D'
+    && '1FD65C49F7DA1EA762B73BDCEBD9E69673BE683EB97A3A2EB1'
+    && '977FC918D1F892E397918C830FA318921F7BCC636E6DF6855D'
+    && '5ACE73179C324F7CC3EEBD1BF7583A3AEC51AAD187F9878B4B'
+    && '0721C1E74C1FF29819D0746632684F7B6E14C318E0C0BDFFF8'
+    && '678E7B620843FCBCDFBDE36F8E1C05F13C640FB425F1E76F4D'
+    && '317563E9F640079881C82C743CCA1A19825518A61EDE402E02'
+    && 'D50C8DF57237E117C5807BB6977BB6570C32077975326D5B92'
+    && '2018F814F41744E1751DEB717CDAA074F7B7778ED213AE1227'
+    && 'E70069FBC0753D310EF7000F4EE358D5767008B50CCB707E0E'
+    && '2881C2400C37987EBC777012983EEDE23EA3B1814648461EF7'
+    && '65EF000F7A810C9AC20CDDD00E11960FED3549C90021355883'
+    && 'C6200C94740DD5600CDFB0850DE80CCAD080E6570CD1700EC6'
+    && 'E00C3D487306B77BED5733B7E23EB9554047A85A61A35FC265'
+    && '48D6A035FC30759A6232D2B70F18960F94447BEFB00D5EB70E'
+    && 'F4F00DEBFFD00EDB100DCB400CC4A00CCB6086944889CB100D'
+    && 'DCC026FC300D0F287941D87B3C3284BBC156397587A0C58787'
+    && '046186840DEEB038BBA26B73C435F05271DC900EEBB033D0C0'
+    && '0DF5C00DCBB00EF91089CFE60EF3700EE0400CE0B00EC6400C'
+    && 'D9200CCA900DC4200DF3C01FEF900C5B3881E73773EC977069'
+    && '37877F43532D166B10B781C1855C62033CC7650D8C460D5F34'
+    && '0E7BD726EDE00D92C10DE79022FA930C11266AED100DE0000F'
+    && 'BFB80CCDA00FE7100FFEC886D0580D0DB80CF0A021E60781C2'
+    && '908D04C71C01067F0DA55333A68A63F35924E30DFE803AC555'
+    && '32F7B00E05028B6E738F71620C9E011ED8680C9DB80F21F70D'
+    && 'E0F00DFC700EE7107BF3FFA00FFA700DCE4089D15086E6070E'
+    && 'EDA00CF3A00CDB08913F5870AB5639D0C2124D939163337FB0'
+    && '810D6E56953DA421F9307AFBE045E6B10F77830DF1900E8132'
+    && '0D553253C2910E08180D5DA50FF71078EBF00D56440EDB206A'
+    && 'E8D60EDCE08FCA5089C4500D7999894009813177734AA93071'
+    && 'F81D1E18953636347C4861DA100EE5100E904964F03043C363'
+    && '71EF1066E81069F76032DBC03D9D8385CC7085D0B00D084849'
+    && 'DBC00DFC704C2AB70CF4D093DCC00DE06049E0000ECDA00CD1'
+    && '400CC7200D99B89B0A590CC4E0800FA8830D64813F52424BD1'
+    && '1451F9564B558E64443E51E598F8F098E1F00CF2A032FEB03B'
+    && 'E3D25C5F547555A35680D116D8380C73FFB40DE7A00FEC203B'
+    && 'E6573BF1D00CDC6089E7C00ECAB00E93980ED1500D938886E6'
+    && '678334E78082492B6A379C96E756716268E22636F8F10C9059'
+    && '0EF8109D917931BB639EF7800DEA303606F41EE1B985D8888D'
+    && 'C2C00DFAB00CC6B00CE0C06794A80C242A0DBA090EFD300FEC'
+    && '206AE0500FF5590DC9580DBFD98047090E6DB87BDD068EDF24'
+    && '1B6754A06283A0E1800F16C2A03ED30DF51072CFA66B23062F'
+    && 'EC3153AFC9677C467E36A89B9B38A265A80CDC308D53060EEC'
+    && '10A3F3C026F7309BD2D097BB39A3B1570C373779DA1535C1C7'
+    && 'A36F156E35860D522555418A0FF4C0A03FA435FDA07F6E33A1'
+    && 'C8A51E26032F08353B08650C856A0C66180D989889D2FF500D'
+    && 'D5700CBB99A5C1948C6B4990E750A6BBD9800E786DDE1860CC'
+    && '037C6B771D0C266B61F330860448E790A0E5B0AAE1008FC3A2'
+    && '6B2B122C62820C8AC6A471E20D5B810C38011FD56670CD7089'
+    && 'C2B08938A89BB6790E39A90FD2780C329A8CBF797E5F089893'
+    && '17144B599C01AA6050293640D432DA00A490399DF8D10F0494'
+    && '66305632EB111EC83056C9700DC320506427733A787EBA39A2'
+    && 'C59097F10A0EF9200DED100F17C40EEC600E20FA9BBF2989C0'
+    && '697BD928AD1509AAE328AAA42A3651355D2E7332521582E3E0'
+    && '4546325DB0A1A4C6E54C3E6335E23147CD100DDE2021860AA5'
+    && '0F297E00BB8D998AA963DAA8C86A3DE0400FCA60A2CC4AA6BE'
+    && '390CC4FF90A66AFAA9C0379CDE598703B35B66667FD0D74151'
+    && '320F84F4B05DE351E9F627DDC03346E20DBAF38BDF1089C680'
+    && '62DCC00EDEA7A9989A89903A8D79A9AC5C3B8DE6000E8E2A0F'
+    && '45C90E260AA3992A7938AAB3089B443CBAB02EC38A7BB771E2'
+    && '2046C8770F7EB577670652F5F047B0810E9B321E73C70FFDD0'
+    && '0EDCE21B73D9960315A5B937A3E7C70E32AA975D5B89E41061'
+    && 'CA400EE010B3589A97CB90A5E4777B38BAA6B692423BEAB35D'
+    && '864C3E268BDA805E24533C60297DF7C20FDBB0188EC20C2BFA'
+    && '24A3E968EDD04BDA487E0727A3BE490C90C883F1DA93CA0097'
+    && 'BE563BD5D0A8D9E07DAF29BCB8E7A8E7D7B6DF78813C8B1638'
+    && 'E265DF1361AD1B4011FFBA7789E90E27335ADE8B0D1FBB2DC7'
+    && '3A2C6B020FEBD00CC230653728863B787E888A9BF8FA8B2B38'
+    && 'B93C790DF4303FD9B00EEBB0B98EAA0CC7308900CB83C4707B'
+    && 'BA77BDD84B6087D96543F339EB960FFF20302FD387FC8734CC'
+    && 'A20D18560FAAE40D08780E6CE20FF30093FAF08B8DC50DF180'
+    && 'C0981AC042E9246B520FF17A0CCE403F16940DE4B2B9DC60A2'
+    && 'C7A00CCC9A8947697BB5C22E0DA5B0364661EEE00F92664F8C'
+    && '035A213434E92188DBB024CA652A6792C2E4253BB888A803FB'
+    && '9BBEE8246AA20F936BC3D64341F7D3BFD1900D9C7B9B237A86'
+    && '38587362419C4C69BADF1542B2B84C30C20F12E63218E365CB'
+    && '32ABCCE688306971C1939A3A790E28FF56B58DB58D12587E07'
+    && '97BFDE720FB5333DF5534534643F36344C1734B9C4709B341A'
+    && 'CAD876B0BE37ADB8619C125537C4563C8E8626A909C2A42426'
+    && '1326BE5D364716472CE48226869226FAB00E630AAC8EEC9BC3'
+    && '5B89CA7526957B0CC284C6CED0B5902A0DDC20A3F059A6712C'
+    && 'C71548BA24D29458C651116648A6E4895F8A61F2E60DFC705E'
+    && '8715A7E9C00D7F52BBE7B00EBE562AA9C9C46CB2B9C3BCB53E'
+    && '590FD5A024327A0CFA7C41D7600EC2E4859508A93F89A532EA'
+    && 'C9BBB97E67F77BA43C1F3B177FD9CC2C8E566675D39044B50F'
+    && 'ED7031EB00256119361BCC59DB622494948250529302B2826C'
+    && 'B20D096C86F37C9E561AD0366CC3E660C3E4700F9FFFAC9BE4'
+    && '909B1866D042BCA9D64B100EDC1DBBB119780C8BCB3430BE36'
+    && '618645BEE21061B1D86587B32C84A722DB303B73B424F2002A'
+    && '3B749AF9C00D40F872E67786C520A3F59B896E5C3B31ED0C1C'
+    && '4A0FEBC00F7B49A204D20EF1AA0CCE30B0D6CB376E7BCDD92B'
+    && 'AA51AC6E27D30D733595BFF228E7E065DEE23942A3883325CE'
+    && '7CDC17DFF0B95E5C0CCF9C0CEE200DF38CA97D09C4D3280FCB'
+    && '208DC3D221F320A33F29943D1CC49938B0B6078702F1253793'
+    && 'D77A1D36D4705CEE8671E2502061063ED1D565DD203E7E951F'
+    && '3688803A0965D0E00D586A8F94580DF51078D2E0C2965DB9C5'
+    && '4D89D208C4C312A69B7B0E241AB3DCF0C3D22CC70F28ADA67C'
+    && 'CA80FFF36D6E154278BB0FF3F045F7077D749BC4B39DC2E3C3'
+    && '3DD4F0AB68990EFE405ECD000E3D6CA27DD9BBF9300F595AA6'
+    && '60BB9BF19A89D7A09761790DEB9097068CD9CE288DD99D7381'
+    && 'D940D70C38D4126861830ED46471F52046DA925FE596D4EFD0'
+    && '21DDD054BFDA0DC83020A3D916FAE30C841A61FB7093C47097'
+    && 'F43CE0643D89E480BC2F3EA6CA900E08AE975BEBC8045BD7DD'
+    && '9D1AC6A9BDA9C8D1EF003C00993486F54304998EEF003EED30'
+    && '30C3F50EE96060E4B01576760F41A28FD1100DEDA0896A49B6'
+    && '39DE0F9B5B898F0AA93B9E895C7AD332BA0CCAC09764BE0EFB'
+    && '609B648A9B9428CC341A91757D3343CE1BC367A04BCD917A45'
+    && '4A19A26B4DBD77C7FF9D9546CD0DAC040DCEF00C831A7BF608'
+    && '7B79998CCBC097B3A90CEC6055245A89657E0CCFDD97D130CE'
+    && 'EB80E6250A0E81F78B6FBCB55AEB86BD1AE4423EE40FED3287'
+    && '354DCC027D86051BC0A60F7CE8356BE90E3DF44525336455E9'
+    && '66CC709BD7F07D3FF9C9C4CB9725AA0CED2094F9ACCFCAEA0F'
+    && '637ADD904AE5EC700C998EAF55B563030EA9E25EA69A4AD709'
+    && '842912EE6224A3E46273B73E544F4B9284F6D20DF1E0612345'
+    && '32551999554924BD885032659BDC00D7075EDDB889E0CE5C71'
+    && 'F35094B7399B3D1961E0A0CF9A4E0FF2A3D3299BE7A79D6AA5'
+    && '9BEE5C013304A3A4B4CC2CBD1B7866E20EDFA0E139163610E2'
+    && '668EF9985509A5FF768999C888FAFFD00E32DAE9645BC028DA'
+    && '21FA100DFACCEC906ADF9548A289B297321EF4983A7EA3CC6A'
+    && '0D0DDE7E3E3048863490135ADDC0CEDEE0D71C998703A3F20A'
+    && 'CAA06E060D869A0C6FFED5CAC80E6DE2C6664E89CC2A0DEBD0'
+    && '553D4CCF3E590DF9E3F6A50DC7A7AD3CEE72AD1F4FD81BEC59'
+    && '1C0548D0B9A00C3A9DCFF0AB61BF9B6A29C079790D649C8CD2'
+    && '00F1EB100FBEF8E624CADC3F7CCC617BF4434C919413AA4778'
+    && '3219EC436956CEA6D5985BCFF2DA900E9BF8AB5DCE86C178E9'
+    && '7A090E5FAA0FF230EEDCDE9E7DE9C95DFBB5CA68E76EAFA917'
+    && 'FFD346ACBDB8E49DA2D4817FAE61E2EB5B034357F6B2AD08CA'
+    && 'AA6E360DFAF0492FC57D96F8AB94D8A8FC3A2025FF9AFB966D'
+    && 'F6655AE7AC4ED7DCD63A6D943334B654D4905ACA0F524363B1'
+    && '4D9B8EBCF354F95E0E6E26671C128659FAA108D8BC00510F1C'
+    && '3169C4D2A5BB778ED83165C488357418D1A1B26A0E0B4AC498'
+    && '51D8468E00867D1C0640E44892254D9E449952E54A962D3D82'
+    && 'FC888C19326B356DDEB4D94DDFBD78E2B05943574F5C3D77D8'
+    && '7C5AC356AF5B376D35D5EDEBE60D9D356ADDA03DC39A0CDABA'
+    && '7AF9F4B15BD650D95876D5B8563B062EDABAB1D1323E2C580D'
+    && '6235850F311E7B2B51583161303FBA041C58F0609621FD22A3'
+    && '895371CD74FDF229155733DEE39F3F6B8AD3576F1F3A74F936'
+    && '63D326AE9B4F6CE39E356B16ADDA3B6ED2B82993368F9BB174'
+    && '93FFD7E18DA80C37EE88AE3156D377D12138DE6F8B112B368C'
+    && 'EFCBBF849D3F87AE32A447E6C88621B68E5D3B3284F73CE7EB'
+    && '8654B3BF7BD49A22D5C62DDF7ACF5D998646EAEE2B376BD0A0'
+    && '6DBBDF0C1CB766D0D4F7E3871E691A02472C8B9043F0AD6AFC'
+    && '6147A28A223A0EA3BD3AEA8BB9E82EC430C39862D26E26C498'
+    && '410A9B74F2D1061BF3DCC9871F77DC41C7B26EEE092D9E7D66'
+    && 'D4E7B177D2116D1B6DD861271D66D2D9269966B6D9099A64C0'
+    && 'A9879D7BEE61671DB92E8248C1E2A4C9279E28233A861BE390'
+    && 'EBABC2E9320433CCC036C4EE2666A8A9094D9BD0F1E93C6CDE'
+    && '29CA1A6FCEC1061B7944D346C67ABADAA7ABCCEA49E71C7086'
+    && '8C869965986927FF9F76EEE14F9A658859871DD5E092E64165'
+    && 'D85A08B72B89A9669E7D0652C69C26D759679EBC88991024EA'
+    && 'C464B555933894C92635B159879A6DE4C1693434D359473478'
+    && 'B471A71E79F839071D77B449079C79DAE9C71F7DFC79079D74'
+    && 'B4F1461A69E2D9669BB0B8F9E69D6DCE59862E70D601A79A47'
+    && '234A921B7EEEC988A163AAA9061C7DFEE9D3B37DFE89075003'
+    && 'DFE2485557FFFD17A4EDBAD94E2664B0F106196D6CF5469B6F'
+    && 'FA89A79B5DFFD1471F11BB09AA1D77FAB9E71F79B429519B6D'
+    && 'B849161B1D7FF4669A73926146C864B2D57699B0A211869B7E'
+    && 'E6E9A7206124D2AC59CDEAB9C7B17D9EFD47200977E6286961'
+    && '5605B8E930FD22139964D2B98FFFE5FB9081861A6CC2F30662'
+    && '77AC39471F7A1C4B871A6FF6D4A71B79DCE1279DA5BA01921A'
+    && '78F4D98635A95B4E26EF648A31C618BE9B59E638D7D2D96732'
+    && '698A7B081C7F70DEA79F762A7EB662E1248A301A639A3166A3'
+    && 'E69CE6FC42583FA409316FDAE186993AB7B1F59B73CED3A69D'
+    && 'A6F284079E77E089F81C6F81ED26D87AB681DB1B6EB659B79E'
+    && '739AD1129A6592316699688AA9F472A38B093B1E19B544DCA2'
+    && '7A3CCDB76378F8F1E7C1BC9AD1871BD9FAFDB273F305CBAECC'
+    && '9AB6F986991FDD49C71A9AB6C106457FC0330A596BC6F1061E'
+    && '77DEA993355EE70ED789637622824633BEC10F7DC0231FE948'
+    && '86E51C758E682CC3180BA9C73AF6010F892883FF64FDE8473A'
+    && 'BC87914BD52651FAB8D740F2D2A97CCC431FD7404E7296763E'
+    && '1A02E63AD791897910830D6820A61BF1C0864C4A04A48A2DE5'
+    && '57D6104768A232AD3A690380223A8738A6150F742C8C1AE968'
+    && '07B3F6219BBC618319CDD09B90EAC1AC6DF82D737D83DF3698'
+    && 'E496BD442822CD68476336C61A87F005551B21C632E0380F53'
+    && '91AF867F6489905E820CD40C2348208106047BF80DFB7C4B1B'
+    && 'CC0099FBB2C68E47E6847E0D0BD1EBBC91266A500350DBE08A'
+    && '37DCA71563688548FE985105FD560CBEDDE31BC7B9C63C0A94'
+    && '177DF0E31DF95ACF086388B46DCC831DF35886E6CA0748628A'
+    && 'C430C6C02134A681986D6CC748CD8446C21026CD4E4ECB26ED'
+    && 'FF78CF039152135A75921BDE30519D3C69A208368319C9C306'
+    && '3192710ECF64E62BE742D08086F3B84D396419FC800737E251'
+    && '1BA3E56519EF700B3BBED1AF621694242099460FBFC88CA20C'
+    && 'C364D8684710B7C12266D46361D8808737B44615709E4D1CF1'
+    && '80079A7ED2492BEAA89160448DDE64968C472D431A7DBA1E79'
+    && 'F6D18EBCBCEB1CC569C73BE2520F2D55634F2D3C5546F8324C'
+    && '8312333B4164C634B671106F21CC64E9F886ECA2020D64A14E'
+    && 'A4DAE8868ED2F133112D8C3454D92649A9010DF795356F5FD4'
+    && '4ADE52C30F796C031DF1C0DC2A1D829763D43537332A0838BE'
+    && '919B73C4431F2AD4CB1D95B6B9A2167318C83CEC30F2168D66'
+    && 'C80898EB80C6FF4EF6918F6C49CD1B101C0734904A8D7754A9'
+    && '1EFAF0463740930ECB80951A202A6B6A67E23E3D5283654202'
+    && '68DE8EC73778D6152D76250638F6E10FB7E89218DCF0473D84'
+    && '8334A511B4B0804C2C00F2F69166486D18DF601F08D7812C14'
+    && 'E663654A6D87C292210FD3EDF01BDFB8873EE42114A084C71A'
+    && 'DFA84C273BE9C5B266AB65860A12CB92078E73F66D6FCB7006'
+    && '96E05557DE5C03B06FB9D47FF9528D66F0852F9A3B2E319361'
+    && '98C31AC31BD17C7032BCA18F7ED4437AF778C73CBCB161B452'
+    && '231AF671ED99A88A4D6AA0C3AA26D2468B1E2AB287B20335A8'
+    && 'D94634588ABC6514E8820EB9B144F86B966CF0B7AE1069C86E'
+    && 'A2740CE10059193B3BCE5E88FF9AE0F31DF665C958D13CF0B3'
+    && '8D767C035F8E7BD63B4C878D6998D31BDB306B7BCB46AB70EA'
+    && '68A3D2DA463DFAF1657EA0771BE6045CCBDE2C24301EAF9479'
+    && 'BB46906DCBE3DBBE6B20E060873404326423D791957B297072'
+    && '08CB641A365848FD7847420809C748EBC3AFEB70C7CA90D165'
+    && '6432D31BC69009886A226A6B30E31D4D81DB69B1118F0A57CC'
+    && 'AD17054DCB5C3CA4EDF4ED72C2C81C41D0B25FDC2CC31DF28A'
+    && '86BCE4D95B2EC9CCC0CBF88830A2B16446375A48D168873CDA'
+    && 'D12B6444A37016CE0708FBD1B875D0AF6FE724E4348C3193AC'
+    && '89DA44541129EF6C65B2CCDC0368D9FA46E986E8E1E16D031E'
+    && '608C463A2CA8BC47C1065E7D76483350A40FFFB7B8655F103A'
+    && '4E358411CC620493D9CD36DF406506C67AE40D1D5A94DE6E67'
+    && '740F7E24AAE2E50C23CB0E65326A9C834E5534D9B1BEFCAD8E'
+    && 'A3F267DE484D32F893372A378357C01BDE58EC428C762C6BD7'
+    && '15A1D28C84CB29651488211369461D97B797DF2E9C6F0F87B8'
+    && 'AB3ED2B720C9EC1EDB3D16B7BCF11888C11C35BF532B7F5293'
+    && '0E9BAF0335D0650779E2E10DB33F951BEC289A8CEE31ED4065'
+    && '4BB6DA1AD932D6F10FB632561AD72846340AD28E7DDC032D95'
+    && '3A86923E7BBD60CB732279DC066C08A40C56F2C582D73046D4'
+    && '1B3DF58FE40DE642522C32D6E1D77BF4E71CE2AE5A8CBFC10E'
+    && '7D208BA726C6C639FCE18FA2346C759DF4CA36D6830EB369FF'
+    && '149C12C30F0F7BCF8F7FF8431CF95EC69C31D70C5736441AEB'
+    && '28884B3F05DADC121B55164CC667691CC16F4C07EA9A6F5597'
+    && '90290C67287519D798C63492710D6EECE41CC660AC334AB9FC'
+    && '7835A32BF98A86366AD50E972F1561F000B326BA9E6CC18616'
+    && '3907B2721F84E9322469A0E08AAFE4CB1B67683869D02B2819'
+    && '907A80A1E5090B69A820CAAB94688887417106DD7B21EF03BF'
+    && 'CE010961B886EEEB12652B15602AA3EDF906DAE00692E99B86'
+    && 'AB067B0BAF7E809997698673C82278A8937C01A72B42166E68'
+    && 'A2081B12B2629994DA8A7738075FBAC1C07B8D6BE913B5D806'
+    && '62901462888778B1943C7A0865A80787A8066ED02376D8076E'
+    && '103CC43A41FFA799BA8DE89BBD30A37398A975481E6520A01A'
+    && 'F38A7C304333241E69488777A89176883999F91D99A11F6449'
+    && '8D048286688806378B31FDC887D4B03BADF8C1D95829E25986'
+    && '6FA83141DB36B9289732D48DA39BAB30DC8F7D78079E5236BD'
+    && '6214960287196AC3A6E13C6402B5C442863743A6BC89A31F1C'
+    && '9A6DD88F6498353D52177EE8876FA0B94381AE2D532FF3D806'
+    && '74F32277B82293C987CE421DF7B1957160AF37DB867D582A78'
+    && '70447000877C081C77631ECAB32361800861900677AA87196C'
+    && '067AA087E10187055BB458649590E89264D3C7BEF8883C93A0'
+    && 'D6D8A2685086C089A37878A5D103A576A8206303A36458876E'
+    && '48066B601955D31A6F4808FF76C8A77D928773103105920773'
+    && 'B807C682317F5817B2BB9C7089866BF0877E78145882A1DC52'
+    && '066F08266360078891B96F700670900796422691300667F83E'
+    && '7B7C8E7C6C41A2EC8BC0B9A3626886970CB6ADDA872F33866A'
+    && '2044B5BA9C68408652721F6AC99A7310A5AC31193523B8D6D9'
+    && '1368FCA269B8067290876FB806985B92F5680793530F35AC14'
+    && 'CD28978B6806CA738BA424977B381E70E98A7718060B32A6CC'
+    && '134A311986BEC81C032BAE6F680661483A810CBC3A5286CCC0'
+    && '99795006B728175622065552A7B3BA9C376386C7C8967318AB'
+    && '8360AC2331C876B40F33BC8771D01619CB167EE0877C58877F'
+    && 'D2977348B3CF8208E589947D50B8BDF89DFF621814B5704CCC'
+    && '39CCC384C5C20493E3244A5B73CEBC518652EA1BC0E91B4711'
+    && 'BC73E80A70A0AD02439EBCF93696B1C62544A17B980698330F'
+    && '13E18FDF192B16431D6F18946DB806426114E89AAF66D83078'
+    && 'D8B67E803E7660A07C6007ED143F5AC4B5CC81092F51CEF0D3'
+    && '9C04DDC78D081CBE513654290650F4B74961A5441306704807'
+    && 'A56C07E401B5F74A06FEA3BD1231992CAA221DA1C46E01962F'
+    && 'BBB718FB327D4886F2EC9BC334066898BDC9AA308AD1872A53'
+    && '8EC024D0839A06CE532CC23CD0A739CE7DF48B8D201E9AB923'
+    && '6538073B3AB403E39B558A50C7B98775F0CC51A286C7B1B49C'
+    && 'F28E7D129169C12A00420770FA9D6D4818A5A286E64A2BFF21'
+    && 'D98F0C0B9A9EC907BEF306619221A8E91BACC00A678086A01C'
+    && '521BEA17192A2E3C229C6AD0CC9D9119DFD2CC18BA20DD0A21'
+    && 'CC51C3D1C122F2E80AC24BC574A8206C908D75F8326F784466'
+    && '702FFCE88F73CA1B6DC04E359BBDD9E9AC7AF0877FF8076F68'
+    && 'B8E5C91C05E5C76478866B088770C80A7FE9D3E7604E591D3F'
+    && '5CDB8BF31B23288D1042AD23B96A385B6B92F570B766A80619'
+    && '5949E9D93654F40C76F8166C68AC826C07304BD310E3B251EA'
+    && 'A1899A111042A51A89537840A5571C86D4082661D24763C08A'
+    && '70288772C0D567B08E5DF51CE6C8C75E1D50F86B5703D3CCCA'
+    && '63A52974949D71319BA920D4483E7898BBC9C897C6A9321743'
+    && '161AB907FF1D11A04D1A2964A0864D4B07C47899AE588F7CE9'
+    && '8A7E70877B70879EFC889D1C896418896188D772C0077CA0D7'
+    && '67583063C257E70009C62CD01404D48DE08BC434B65DDACCC0'
+    && '61A3CADB19B5CC1699D123FB849F6C730C7DF886844A0FF5F0'
+    && 'CFAD512F6A491351321866382CFDD08CCEBA1714DAA74D4CB6'
+    && '9E14099635A671708670C007569559AC801A3EBDD9964D0E99'
+    && '09549F9D90085106CB243A8DD819C8ECA087009ECFAA866868'
+    && '0D2C8A23BE8307AE3C0777B0CF698487DC419D3A49A2522B2B'
+    && '83911ACF438879A9B0F5D807C69A4EC454AA05B30E977D0679'
+    && '8DD999B557EDD0D5B9950EE4E48858C5DB43431589E023DDD2'
+    && '928CD8941A5B0793DBC4FF1A9907D718107DB2917768079E12'
+    && '921A840709CB1AB23AAD6849406660A4EE4CA997898779F007'
+    && '8655B37DE8BE61B80676F8886998877A58B623D18A71B8D579'
+    && '8D59F54B866FB84AC4685DD74D099028067A0C896093DDD915'
+    && '867440259AEA8D368288975C861949871A4CBE7618942F4392'
+    && 'FB21CF91C9A2F5DA30B14237CEA22C78881F513219C4C89A61'
+    && '78AB6759BCE36D87200589ADDB20507BA44D338D5B35877894'
+    && '9A6662DDBF90DB3E5D1AE6EA5E8F8806FD6C504DC906FEAC11'
+    && '7FD012D8A09C49A1886AF8A57A50866B8831FE880677E0447D'
+    && 'B85D6D242DB27A282F3AAD2B728775D0368B91958D45860DE3'
+    && '8E78E09EFE49C5806424C55AAA797887FF6EEB2123A1D5D37D'
+    && '0667780782C18EE67AE1181ED2167450E43486BD6B522D6C90'
+    && '87209773E0BB7B78C9898007B1789473A0C0D6A03C97820D43'
+    && 'A40D67D18F9402A551028D2A369B7790CD7F38B5C59806723B'
+    && '5E6F399834F32B76C00E20D486681AAB7160066E7899FBA855'
+    && 'F3A0162EA6E3EBF8D17B95DF9308D4B08890C55B077DD0A534'
+    && 'BB92D7A886C97ABE76708DDA8C8872E114696806694886DCA2'
+    && '1B70D944C09131AD483E6680066B68868A941D7E2811393937'
+    && '66F8B22E760C17BBBA6DBD07DA8B2F76F289A8E5918A254F6D'
+    && '4E3384E92E0FC10E43422821CD656382E18F30DC601D3DC7E0'
+    && '5B073195B778A96C03478114487B6A08BF7999E30187FF76B0'
+    && '8F26242BFAF964F7B109FA412277F09F4D12A09A901885E10E'
+    && '48931A72B04467189D7A639660B9487AC836CA722B66490777'
+    && '80069F682EAA32A46D80094E8C5FD75D1A5A3C4CA5C4A2C900'
+    && '5ED988924A194873218823068E380D9F606B6887A0A00BE2D0'
+    && '979106BC81246E98067318878529B5732B912C2D1B9B388F90'
+    && '0665295BBD7884AE657A2AC281987E3807D571167F78CB02FC'
+    && '8E6319D3D5B167FAC98EB8ED67E69099C334083ED2A76D73E2'
+    && '7B30078CE0860789068590061409AF6C13148850EA0625866F'
+    && '884EBF6999FBD0666F90077210A7683C2FADC1266B580AFDE1'
+    && '68A4909A75F8A6717816D774DF97F9867CE187C978076FF016'
+    && '79B807FF07C218B7FA2C716006AE0419AAE806D399891B821A'
+    && 'F93DACF7B3A3B700877378498800C76330B83F838D99FA0F27'
+    && '96CD7A8A88D78808D992B166C006C6DCB24BB615901127AC12'
+    && '0734E1687B3EC037EB1A7E1087734807707AA46658075BB230'
+    && '13BB07DDA61FD1E8867610076FC834D0A8878C82AA86F19066'
+    && '8089C006689F9D0888E08BE7ABDD88A8866CA8867B00347618'
+    && 'C8B18017696807177B087882903C72BE86001C21595A6DF66C'
+    && '4F3D9953FBB26D7D137E409892FB066D680674B88FB9AB18EF'
+    && 'E018FE380864710771080A6CF9067032316A784871284FD0A0'
+    && '1F4F19196F4806EDE0E99F06EABE790867C8067238BA62A841'
+    && 'A783A7B1509CEE0147FF4B51864521A12063E64B5106C35B06'
+    && '7D3840F7010730FB32F26E8A37212D64A99F66F907D23491AE'
+    && '811B87D1AA7A984D7F5807D080861CD7860712872247B9F048'
+    && '7274088F401787C8C0227D7007D4B9C52082DF6150A6C01609'
+    && '5C5B0867B8866CB806672045062D868630387688D3EB199059'
+    && '1A8EFF7A3CE09294BB046F0A4CC31F8A078781F286C9CD6311'
+    && '876F4088D9831171A09F6ED81340092D1ECF07EFB0E0205AF4'
+    && '6E5087635187774822274A31713059D2FA06D1820F01429DCA'
+    && 'FD0964D0B4068370A673062E27077330876C68770ACF4B0C6F'
+    && '0DE315488AC8B385D83988B0AB68B0567000284C299779C0A5'
+    && 'EF4A077D289B0D1BD3690C8AD15178FF7A0120AE049A19F106'
+    && '4A222D280496531B2D017A1B7B7007755087D1D086714814B7'
+    && '891FD4CE1D34C174127193BF1675195506775F617A8877558F'
+    && '88429E888AD88FCD1C6287D0F973108B8B700B769AB6DE5A87'
+    && '6C9B36E279870D3A88BA71226F61BB947BCA64F9B2A0E0E394'
+    && '726DACE9E273408C9CA0747BB07675400A86B51F90B606B7A9'
+    && '125B818738F21163EF8F6160879A7D15A6114A7C348699CF86'
+    && '15FE079B378754A7BC09D9CC305C8674189094749234FB6182'
+    && '98F0DF6A1047497A789806AC60A7954C916D0010DADB9DAD01'
+    && '0D6C2091A5D89A7CC871616786A1B8953723A438320A6D8628'
+    && 'AC426D91B7077418F99A009974A024F3888C5D0121FFBECBBA'
+    && 'BEF20A6A007564B090967D893B368663384BBEFF0778977787'
+    && 'C0A356077348798C63E85D17CAD111B44C151A100A94EB77B8'
+    && '4C7908ED5B9D06D8E607A0E93635F2069F300F248A8AC8B8E4'
+    && 'A2809BB036F29AA822641087C91A0D91C6257530167B00887F'
+    && 'F6DCA15367B0DB3B83DAAC756368ED1BBF7FFFE689EBA6ED5E'
+    && 'BD7DE2AC0D4336EC23C86100007C2439F224CA942A57B26CE9'
+    && 'F2250061CD841953E62C9B3973F4726673768C183163C6A211'
+    && '2B067419B87DDCB2D1FBC7CF9F3E6EDFC05523A68CD83170C4'
+    && 'A4819BA7EF58B46FE3C2952B872F5C3876F7B89D5BD70C1D33'
+    && '66DBB451C3868D19356BD8ACF1E5ABAD61B775D8A8D15DB830'
+    && '9DBEFF7CE836A2CBB72F9E3B75E8DCD9F327CF1D417516B569'
+    && '53C7B99B3871EEDEDDF3972FDF3971E810A673678DD9B96421'
+    && '67878469FB36EE97C6D655ABC6EED84D723CAF39BB4A6C9951'
+    && 'A055812A8BD6DCDFBC7EF5F25553C68EB734ABCAC0816B076E'
+    && '597572F8CC8E0F378E5DB36DCD92C54D866D1B33B1CCAC51A3'
+    && 'E64D9BB7B8CC906183060D9937C820D3CC80FCC103DF5CD46C'
+    && '734E3EF07066903D0571E6CE46DA6C844D68E2A4738F3EE778'
+    && 'E5CF3E0E32735732026EE3116D20E5B6228BB78994CC39FBEC'
+    && 'A38F73CEDC944D4F3E29538C31CB08F36331D180575535CB44'
+    && '038E32DCB4C31B38A749730E3BCA5C954D555236438E59128D'
+    && '67233BCBB007DF7EFF712DD81732D07403975CFB21330D32E3'
+    && '40D3918072C187CC36DD80A60D3A7C7503A141EAF035183CED'
+    && '60E8CE99DB50D30D3689A1834E3ADA30A34D99257A84628A22'
+    && 'B57829A6277DE4E13EF9F403D431C0D9182A503FFE488C30D1'
+    && '1423A5AA5771B30E31D580234D34D5D4D3CE91B712C38D5656'
+    && '9DB3CC35663555DE35DF44934C32FEF937DF39F5205A575F8E'
+    && '22A34D3A7FB6830E32237A63D75ED16A834D3AE83C48D94167'
+    && 'C683D13D9F1926CE42EBBCB39960F57593179C1FADA962A6F9'
+    && '5E3A8C30C31843CC3AEDB4B39C55C718579430C50883EAAAC5'
+    && '2C631550CC452CCD36B202C54DA7E71015ABB1D19013AC59E5'
+    && '84F30C39422523D436F7C5D54DA7FFF17453AD5EEBD4875968'
+    && 'DEE4B3915F7DF5A54EB79C19160F3CEF10BA5A3CF9D4134F3C'
+    && 'FBDC638D36EFA86627BBD8ECD30D3BDBE8FC5A471F3583AFBE'
+    && '5DC31452C20B4B7370C4115F550CDA6817751CC1B1965DB632'
+    && 'E748A9CF3CB766278DACCD39734D38F8C8E3CC34DF0095CC7A'
+    && 'EC25F38D3B9EC6932035D9369E4E3FF970130D34EB6CF30D61'
+    && '7A891357E37AE5C574A308EDC38F380E328D4E74F2308ACD5F'
+    && '88DA958E38DFECE3A835C8D0878D80938AC4B5D7BDA3449BA9'
+    && '0A2B5C6A72C45C03CE3AAA9A6AEADE0B2BBC70C4465D158D3C'
+    && 'D110058E3EFAC84815383F25398E3CEC9073728F937FC3CD36'
+    && 'C96ED34E46F97C73F981D09CD84E3EEF6C038D9AFFEBD99FAD'
+    && 'EDE970434DECF8421871788A349C110736BAE10E6EC4C31BD6'
+    && '38873BB0F10D6FA4C36ADE104D3E70078DC66D231D591350A5'
+    && '7CE73B7CFD885FC16318DA12568C73F4231EE018DE309E17B6'
+    && 'A2142F62A1129C7390C40D77C0431F02E386AFD6E18F7EF023'
+    && '1DCAD8063792510F7EA46F4174BA1F3CD221346DF4C31FF5D8'
+    && 'C634B691C174BCA73EDE68873BE6C119BE40CE1F0B61DD5FD2'
+    && 'E8AE7ADC8375D4489C36DCA10F6C78A31E7B11C73BDED18E0B'
+    && 'BAA31E86E9D67C6AF7284A55AA2422C44D49760792129AD018'
+    && 'C34058D97E440E7DC02A6C0A3BD2C22CB98C875DC526C4A0C7'
+    && '32A8643025D5A38FE9484757FE01A27E74A86000CB076FBC14'
+    && '8DFF6640031EEFD31036E4D1A16FC823654E9B5702F1D8A925'
+    && 'AA061EFB900743D8650D39E6832084F2C699B041286B9C471C'
+    && 'F7004CD364948F78F4A31DF1089745E6A533DC81B0902639A4'
+    && '6D14399BE5CDF06D07034734B8210DE8AD8D6C4001873C8178'
+    && '0D73C8E31FF4604775E4799A5BED0372FBE80742FBE18EEA64'
+    && 'A737DCB04E3A08B78D6DC4F31BDA000744DEE78D66B4A31B14'
+    && 'D4C638EAA4A12ABAE31BA0F1063CC671A88AB0CB1DFCF0469F'
+    && 'FEA4B3BAE8F11C00A4CF367CD88F83EEA36EF9D0073F16A2B3'
+    && 'DCE50E4E2842113AD3A9CE8F94909D0B9B95F1D8812A15A6F0'
+    && '790E5BC63AA4A1367A162F1AF4D85B35A4F150291ECD1D9DDA'
+    && 'E910F3E1BF592DFF836EC542A231DAA19E6640091CEB89C634'
+    && 'AAB18D617C0345D8401634A6F1CD7764711DDE60C7B4E8631F'
+    && 'BBD8D14E7F611A3C04F8A746FDE93DCCD0503DFA318F7CB4C3'
+    && '1FF038C738FA428DF91015841E6146D60C99D49728B25FAEE5'
+    && '570A11D6A473F0E31A084B1B6E1D76B47DD4A356F27C9B92D6'
+    && '21B7B17987813B3D683BE0C18F7A24A61DCA9006DE94710F79'
+    && 'AC831DAA9AA597A66B476A0CA3196E21EA89F6D38EA671D17E'
+    && '45F3473AECF4390CD1C51AEF18A35FE8621768F1E51BE7C822'
+    && '34B451B49F7A2AA89F23A3505FA3A6D2A656B5AB4D49498441'
+    && '92A63A7578CB88873ED6725B20098F263182E5C38C01C48861'
+    && '751FCA68C7ABB8020F6EFE2331FFF748DA36EB510FAA6C871B'
+    && 'ECF0663AE2998C6BA8874EF538C744E324A0DA818B2F78A10F'
+    && '5D2C828E2B52E37D07B2D0D598364E6DCCE55B7C99C634A231'
+    && 'D169608C7E8E4154CEAEB610FE955677203CB04A5A0B8062C4'
+    && '905FB01D9EF4D6910FA88C8E2835248633AC024F709C636DF7'
+    && '945235F4510FBC5D431ECBD5ACF63A759A9D166D1EEFE04655'
+    && 'A4B10E7E6C5319CD80C72C63939EC220434179214C20A99564'
+    && '867CEB2FE770F2A61FEB976E90831C9B79C636AE718D6C14EB'
+    && '1E8EA15F3DFEDB90AB7D232EB5CB9D9A3EC83B3003CFA95425'
+    && '463496BB0E7D2CB01A695321738C628C85B9D978C721C65466'
+    && '558D7548841F4913B48C32E28FA2C5E356F3B8FF863292070F'
+    && '0A5683416E59B6BF640312470E631CFC50B731B6E665A32223'
+    && '5944DD4FED664A9F674C2327CF784633A68123E164831CF3B8'
+    && '0E1DF931EB4DF38F2F04F63221C16C12A632B5C140C2CA7794'
+    && 'C18F8DA5EA85C143DBC396D19C708BDC6CD08D8E449C72B48C'
+    && 'F076462DCCC83DFA988F7BC8EA1BEBF8C63534DC8E6F80646B'
+    && 'DC90A5BD0474C5DCF967188DBBB77DF4316032FD69D6E05210'
+    && '16FF7DA552EB2427E6B8C63436F80E98E9EC1BDDD25998765C'
+    && '2F421AD86B4B5D3700961DB68FBF9918DE719EC885A7BC62B0'
+    && '831BF9684634C40A9EE454631EF330CD53F8F18EC7D8521F55'
+    && '6CE130EB419A80D5C348D1B886F592310D750F63AFFFA9F7BD'
+    && 'FFDF918F69D44E1BEC988FADDFE38EA4596DD3F1651A67ECF2'
+    && '2D6C40B9E03AF1A7393EB62D996A99E104E688EE6823C244BA'
+    && 'D6D76C7FDB51ECB9B63A470C1CFCA8EE8AB12237354767B940'
+    && 'EDE16E5DCA21C7F87D1FECCB87E0998BA46F9CEF4742A1B780'
+    && 'D2E1C5FA4847FC921560377AC8DB859BBE2F8BE9D65EFA131C'
+    && '73486427E418C7A793CCFEABD92EEC93326D8A8C1049549CEF'
+    && '9D0AF01DE05618073700115645C33A440742E5C3354C5B58C9'
+    && '0AA27107774805122909B1258D3E4CC43615CDE0C5033FE843'
+    && '7600DBF32C9BC2A09B86958831088863280551D9C73DECD4D1'
+    && '400AF8A9C95D7C4B20BD065D6C0B35081C4ED083FDF5C4347C'
+    && '5DB4985E5CD8FFCE6B640BF8E95EEF2C12013658DA20A05554'
+    && '49F40843C8398CCDF5033DF8C3C0245A31E0D3552C03FB6CC3'
+    && '7624607330D0E8650F2C3DE07438C612D188C730528AF44B77'
+    && '210BFB58DF7F804B1569DE8C9C8369314DC35D167EE08CB560'
+    && '83835003BFE1484E9003AB51CE7FB55F5F809EC3790447A056'
+    && 'BDD446140E60EFB15385A90D022E031055853064C3AC808330'
+    && '5405F19DC3E0E58358558377F40655B0433D1C9C3254C30212'
+    && '83398415FBB483539C037459E03C60CF3DB4033F3483C28044'
+    && 'B17C1033DCC344DD0535445837858B3BA8521CCE1CEEA8897D'
+    && '5883328DD33920A1CEF847E0E008AB6191385222FFDD1A0096'
+    && 'D3AE650AD80049C23CD22359FF92DB5861AC1CD126855B92E4'
+    && '9D3280475BDDC33CC4C3AE480E936CC763805BAC5C43976CC7'
+    && '7428DE15754F5658C5D8E4A23420C7B1248C31204B8040C33D'
+    && '60C4B6CC05691CE3CC7DE04E798AB30498354CD4F931444308'
+    && '55E658033A740B35BC03384CD936BC57926188435062970120'
+    && '27768D48E0A153D5A30A410FAC1C2055ACC33154433C44C34F'
+    && 'DCD3B465432EDACA312C436F1103774C8F73F0CA73ADC3434D'
+    && '5B9274DB4EF1436F50E543D9D0C6D090466E645F25433A28CD'
+    && '136D833F305A3CCC43B6A9581579438E11159349137D5883F8'
+    && 'B10BBB7883CB78834561C804358A8560993AFA24260E43AE45'
+    && '9CD9C5E3F23C0FAAAC4DC258E1D84C2037F4FF0355745B512C'
+    && '833CD40DB8FD6375408C332047245DA1327C432E5E45353806'
+    && '3B2049741D45A9B09399354748A4DAE49DC33938C55DB6C38C'
+    && '38863EF8C33F8C836CD45B89A8073454903740835CA14F4806'
+    && '4D33210A34E5C3173910A75D0D023D660F624D26A6166522D8'
+    && '39A5D3000E6501AA8D2896CDD8001B51C8D3DF751BAE100543'
+    && 'CE0337A4D02A46833048896D6DA62EDA19B01DCC674604916C'
+    && '98C558123BA99DBF7844BC7550846DD6414D471F55D13FB003'
+    && '35A0C35CF84F3AA895D79DC3A274D46250D03974C3746C8338'
+    && 'D4C390F95134CDE49F08D56088C324FA243B12558105652295'
+    && '1D4BAC9309CDE3F050D8AA58E173B99D8AF15656A56635C0FF'
+    && '0377649255CCDDB2094566A20A2A2AC34F304935B092544DDB'
+    && 'DB240C295A556C448331F0888060033A24D4B94458FD4C076F'
+    && '291EE9DC476874C399A60C3B98154FE9836359448380E86474'
+    && '5333B9039EC864A791D19051883A92D6C36D620825127A82CD'
+    && '14AEDDA92005DC3047366865A2650425516971E8CD73394755'
+    && '3847546E45AF989C7138472E260D108D1CAC8855C418DBF364'
+    && 'E4464A5E33640F2BB1D26838463ED44DD110DB86A2835C198D'
+    && 'A1BD035FAAC63CC0033A78C338A0C3BBE0093AB86269741373'
+    && 'AD833568863259481C2DD73DE48912928913E29E51252A14BA'
+    && '8422A527512ECF540D8FD984AA7254C5311C1C83D85602FA84'
+    && 'F0384C66D2FFC454CD90BC4A895672033C18C5745C05F4F848'
+    && 'ACCCD366AA20B0A8DD32DC83232D433380433A7853C098D569'
+    && 'EC0354D4C37A5CCE30346C324063CA80C334F04357CCC5B182'
+    && '11A1B8943CD460D19C497CA597371E464658443A265997DDA8'
+    && '39594A8B584A485418C300A83B512AC1DC43765CC7C3488FC1'
+    && 'ECC83248D50CA9CAB1B12773BC032B3D0C88990D0D05C9C3F0'
+    && 'E73F5EC3320C0598F6CB460A8575A1CFFA70938AC1833F6C1B'
+    && '644C5433C4853640833C4CD06058C8B17A833C3426B5F8E938'
+    && '90833F4C46BAACC66484868544109EE047E9458B4D0DD5AD0D'
+    && '1879066050A2E7004E5C8FCAD0C5958D9068A5DFA5E5319043'
+    && '9C8DA671E4E2D0A28A32D4FFA37ED25050A099C35483656815'
+    && '883D8FC664525B80C33B28234D08C54C9C887AD49A73765033'
+    && '680367CD0854B4D06944503BB4113A840F5FACC642588492DD'
+    && '073A1C8A7B79C3A2A0033C88066730E643EE85F18E9A00A9A4'
+    && 'B6A2D678925D00C2E33A3995805E4C6CBADA3C6C8CBB924DA8'
+    && '5403A9644790809B56BDCD180A9FBBEE4ADB94CD326C563EC8'
+    && '8332248C90CC92CDD5C3349CED341C8A866A033730973FB8C3'
+    && '3D589F8AD5CF4961436A90697A21D0992CC6F05A081BA1C3D4'
+    && 'A883388C4367E84542F8893AB46C4154447CE9E44E82C980B5'
+    && 'A3EED16C6ED0ACA29A99A9344398AE8A719CE0715807AE2847'
+    && 'F8824AFA86CAD980838AA5C3BF44EDB349FFCFC1D4909418C5'
+    && 'E3B94ADDB48332C61B8FE0952DAE833024835BDC437AA4CF37'
+    && 'F8038790C6FD24C336B8DA15F9C7376451054D5E99ECA089D4'
+    && '0573218DD1B883F8AD46B43644B26E046824D0A8C1285F7C67'
+    && '7D08C8B64C66EE7D6BBE34AA307CC34CECCA09DE8D2E6E2573'
+    && '846A0DA5AFFA466590F0D40B19316E55836D158F512C0C7208'
+    && 'C3E4EC6F8F54C3377C32B01889336C43756D24FBB8036871E4'
+    && '364185374C035FD69A371C5F2D338363B8839AA403770218D3'
+    && '041A871CE64E85A3DE828B8AEAAD632E0402C94389F29F8EC5'
+    && 'C5D8752F8BA8568E9A500C9D0AB3C90D3B6487DDE543AF2407'
+    && '93C6CA4F840A8E4CF23D0931558429FF5EB228E28DC418FFC5'
+    && '3A384C7FE293D43A0C0DF3E7359C033C69715F7D733DAC0334'
+    && 'B09E37BC4366B9C37DB0DE68E90567E445E9E00C7DE95F1C75'
+    && 'DB3DA82CE4E8C3389C8935755B3AA8C3BBD8C93B709A90B510'
+    && '4C6ED998F207390D728EEE8BA6A4678F5258AC8003D2281E55'
+    && '3017516CC3C31C60A898336FEC34C44C6ABEB6E737B48DBF02'
+    && '8551CC03887D583D2803B8118526FB1638C8833C7C937A6C03'
+    && '6FD1CF36800363641B37D8093A60A83AA815A35C888CFA05CE'
+    && '2019F3CA2471160D667C4BE254F064C803422570E874069E9C'
+    && '434A21449E2C444CBEC646D84EB75EF348B830A6AC53337C83'
+    && 'C21C763BEC8A3EC0032CB518A85C4CFDFAB0AC90CA519C4ADC'
+    && 'EC437514FFC99C1AC7ACACD0766C0C3874136F3DD435A48391'
+    && '849575095189E55397C0D5FBBCCF34344B3D4003E1E0D8898C'
+    && 'C63E04489CA4C34F8ED6B4C08735B00363F8697C214A379C43'
+    && '173F058822F76468033FF443689CCE5FB08E600E86EDFC24E2'
+    && '9ADD822D1BE114C33570D656C443676DD8B36D0550BC27F035'
+    && '656F58B6255D836EF5569EF9C33600853F025B3EAE4A930CD3'
+    && 'E3BD273844892A3B0338FCC329D1B0AA39A03318C33834C37A'
+    && 'C8CE19AF439908059D3051EE8C435F559A80244374AE495C2C'
+    && 'C3A3F40CB5A8E4448D033C38333F80CE0159C40736531C4DAB'
+    && '8C22500509D2307084CCD6066117763218DB47C0F73AF403AF'
+    && '6C435CD5C372409E67C3FF4AF1502556088CBAC6CAD58EA631'
+    && '54838C444E3FBC03BE6647AD70583A9CCB40D5C375943203D5'
+    && '03A259CF3CB485B15C4EE020838621A6FC34EC068DD661DB4E'
+    && '45D4475C0C065F70E78753D35E340335E098CEA82460E2093B'
+    && '28909D7823D248D34FD989598113B82019EB182A0849732185'
+    && '6B6193448F40A91083B3913C4C351C89563543352C30391875'
+    && '9CFD9C567A53A215B576FC233B2067629C6A73340343A27792'
+    && '40573B48C710E1A732681E6F1489531E4E12DD9C3EF4D59E43'
+    && '033838CA36BC47CFFCF24CBD2CD38CC33F894334CC28A8F5F9'
+    && '4260EB18E9913E7006B26A83A5BE433CBC1717ADC366E849AD'
+    && '09C8B744FA3B7ECD1D36C36A5E03C648FF3992CCD9737DC371'
+    && 'DE2A951E60B841D5435D95F58C8DDD41A43E2009A566844D76'
+    && 'D205427972050C77040C1081E9D6C2EEE0C9032D55DA302C03'
+    && 'AE7DC3E5FD24325884C6BF86B250C3B1DC9A5FA4A3A621E2A8'
+    && '69F45FC403016544A370B09DA868025D3434D428BAEBE8A2CE'
+    && '129569E4A6EBE566F9C6775C03FDF0168D0897AA56433670C5'
+    && '099A62C24C0F78F4F831DE83E6F5033F975BA778D3D88C8D73'
+    && '9C833E7857334883D572C7D566AD30C0B73074C53CF00334D0'
+    && 'F0371843FA18033BC008E5A5FD4748199D408AC6FFDF9A1803'
+    && '3340038652E28530CD8CDED11CF3160F89C308B7831E654841'
+    && '43383BD67CBA832B980240E134C39C6A6133305766B5FFC33C'
+    && 'C07AF61C4DF64443DD315445624C5856C53E2AF23A48EC7271'
+    && '969E699F321CDC3B9C03B8811B3B4418381C8FF5C05331AC26'
+    && '403987F739C3DA0F85073992A4984897D545A5E9C38944F38E'
+    && '85C96B2896333C835E28BBCE987C1F53EFD7F98C9075033FB8'
+    && '226810E7D1BC0399BE477EF0C734D4383523922231A4C004C9'
+    && 'C232D74FB5503F48C4AC76C99114DF02D28F057243E5063C40'
+    && '48ABA6AC1D3879E0C0A58B57EF5EBD7CF9C029E3964E59B56B'
+    && 'CE94DDCB67AEDAC06AC4887D1456CC58336EC2502E33B6D2D8'
+    && 'B061CCBC3143361399359B376D7643D7ED9B3E6C38810285F6'
+    && 'EC5938A2D49805B5460D9E36A5D6DC39B509CF5D377DDDB069'
+    && 'EB96AEFF1D3A77EFDAE9CBE78E9A356CD4DCFD9C396CAD4BB6'
+    && '6EE102903B976EDDB92E5B2E9B966F613470C4B8B5E3F7305E'
+    && 'BE7DFD0EEF3BA76CD9B965DFC07123260D9CBE7ADB04229C97'
+    && '8F5BB46820BFF9ADD68E733481DCC0795E76DA19C88F2141C6'
+    && '06F99998B1622947266BB636194D663291FDFE6D8DD9B77AED'
+    && '34E66B879419529BD4CA3E275A74FAB3A0329DE3D4F6D3E64F'
+    && '6DFBE075D3A6CE6B3771D6D2F54BE7EE9E3671E9AC9DBF3993'
+    && '19B4B76DE1BAB4BBDFEEB066C38489669E7AB829499973F679'
+    && 'E7A17C1C32CC1F88B819881B89B8D9E61A7AF859089C7C3A32'
+    && '6C1D6EAEF96699664C8B669B7C3E93901B693E54E640674622'
+    && 'A618654012A6226284FF91519866CE1166996D840110400086'
+    && '6949BFFC9084C69D7A1CFAC6AD665A6AE69B75B6990699E9C2'
+    && '29A71CA39E498AA699B4D9A6A6E090A1861D6F6E4A679B730C'
+    && '73EA2C6CB081271D6D9C42A71DF1E89C8F1A319181063F645C'
+    && 'C28FBF419DC98FC466AEE90C9C79F879E71D87E0C9479F7EFC'
+    && 'F9264269B8D9679D68D6D1E79F7E243D879F6A26AC079C6A52'
+    && '5B869B629C91F2C468B859AD1862548595B1D6682B66D662A2'
+    && 'C9A6B6DB464A495320015869986A5A0254D96192E1934C6AEA'
+    && '79479F6F90F906B899BCB9279E7EBAB186A82CF1C167CB67B8'
+    && 'D30E9DE8D0E34E3E71B4B9671FC572C2C69B76D6794F9B74BA'
+    && '11CF3C9CB049E7CBB6007DCBAD41F9FF33462E639249669968'
+    && '9A49A79975FEF1271EB11EDDA7D1C3D8A906567DD2F1EB1B76'
+    && '06ACC7627932F3C89853B751389A850BE4261963962147465E'
+    && '9599861C1A75D51547199B0127581C8DA9C71F7D9671891B28'
+    && '3DF32DB8A4A462BA1E74B4E1073EA96EA2269D74DEA1331C70'
+    && 'C315371C3CCBB5264F6BBAD9875DB2B532EF1E79FEB9CA29AD'
+    && 'D049479F7DDA6157AA6ED391EFDF80955D76188201F7D1B192'
+    && 'EAA154AC7D2C43BC9F851C3AAE1DCA1C3EB59A89E3E1479F75'
+    && 'AA9186566294F1CCB36A72BCED366EE2D954991C6373E61AD9'
+    && '66CD71F559771E699975E8B60D6166D8F2939BE6B8292B3A66'
+    && 'D239EBDE30D1D4AE3BABB119AA1BAEBFDE0EA76F7EFF3A8BEC'
+    && 'C6D111E7A77CC561FC1D77BCCAA71FCBDE59075F9DACEFD69D'
+    && '7680FAD72DBF01DF4FBF62AA59469974F291589F49F9EAE71D'
+    && 'C41B62F01D7ED6A1391A496376FD5847C3E2B10F5481447EC2'
+    && '2055905012C175CCE35DE948C6AC6EE60C7364E31818F94CEB'
+    && '7094A31C290358D1E8C86D9054249744C3252943D86E924125'
+    && '68FC27857099C9B7B234AE2EF96926DB900936A6810D66A023'
+    && '1FEF6006BBE2A40D782CE441EFDA873F18958FAB61637B6263'
+    && '973BF4F18EA6CC8726EB0B987EDA37A8650C482CFFC0A2D0DA'
+    && 'D10E785886524B9AC7DCA0882A5511E371CA0087AAEAB11862'
+    && '7C2625C688064A009412E334E31D2624C634AE910D7A904375'
+    && '380BFF1DAFA2A1AB8400AB460C138631AEA19F2F2A2B19FED9'
+    && '463BB8010D3131831DC69809349221CA3EAD651BD4B8D2B788'
+    && '320D6D58CD9533790E35B6D38E785C8F1AE810D5B6F261B9C2'
+    && 'EC631EFE90873CE0268E7DA48376DE885A54966293BDB1E58B'
+    && '7F0B637F4AF20D6FAC691ADCF8C63DB8E10E8B09268B1CD3C7'
+    && '60C8788DCC818484B33A603548B20C1FC9F364C938C7378CB1'
+    && '0D6338F08F976407E7C8610E81325219FBCC9930C0A1980D49'
+    && '23829C5A473D9A218C75F8A3199DECE1398AB30E6660633972'
+    && 'DB0E7CB601277744452666F9CDB3EA439D6F6C032749999338'
+    && 'DE932F68A2C372FD681B3F1EC48F48CDCDA6F4F08638D401D3'
+    && 'B915E65EEF40874DFFF4861F6A82F19AFD89283BF0E90C3FBA'
+    && '2C1ADF14DA3F96E939BF80E31EF4C89832AED139629C0A1CC5'
+    && '584641D62123C640901B8EB3DD4A14360D676423A0F4B02B39'
+    && 'B2719165EC1524088A873FD8B1B2626CA370F7C09465EEC127'
+    && '7178431F34BD5A3A9C898E78A04F1B34AD9E43EE29366CAC03'
+    && '1BEC1807509CF18C6D8A2D1DD4384798B0C1AE73B8E33CD820'
+    && '223F1027A9499D733336FD0732B9A70D770C338FE7104FD8AC'
+    && 'A1D4FC34D57D78319109D901A5C7D0E39CD35A063BAEE119C6'
+    && 'ECB535B2D95C8EC0518F79AC439ED1B8C648B6818E47499125'
+    && '08238AEAEA4A0F73E0D519733D87337E740FC1DCE31EFE20C7'
+    && '32C0F15079A463AFA56C16327AC6FF0F7EFC031EDB00C736B6'
+    && 'E10E506D831BFD904737F3D81B6630B859D3A88736FAE40D64'
+    && '5CA337C8C07033B651D1697CE31CF2229338DC710E7DB48382'
+    && 'C1F4873F22F6C4B561632BF0F08657DC6139A989AD5B38F9A2'
+    && '5CE2425CFE302B190C5BC735C0A1B06AB08349E7D8C6375CC4'
+    && '1812C64847923C5D326C945F7C0A092508CE2E370A14C8409A'
+    && '951C655EAF33A6111287B4A31AFA88D03C1289575D2D031E50'
+    && '5A0942AB348C6BF4435BF270323292E10D77405139EB18073B'
+    && 'C414C36FC8A359CD98063416372F7730E31AC0DB0634BC11CA'
+    && '7760A319DEC80736D614BC7184897E83E9878061FC627EF4E3'
+    && '1CE760477DCF91377450051D5751CA8F89644D21FFF34718E7'
+    && 'F8CF34A6F1A3231B832B285A4632AE012CC78CE4A0BAB20D1D'
+    && '5B421297407060DF988791A61D486120DB1965569D4A989C8E'
+    && '882C035511C1DC62E0B98D6848E41C24E9642A110C0F5F6F73'
+    && '1BEFF0079FE5216F3F835A490CA19637000E5B6D39331ADEA0'
+    && 'E277B401702763C3CFFB884765D584E2CA1E671EF3B069AAEB'
+    && 'D12D6F38BC1E694171BE7AAC151F5773D7ED0BD035AEB19224'
+    && '9FC3184B8CC83792010E63C0D736EB965D448175C9910080DA'
+    && '03934B74F383129E1B631C7BCD4636A81BCFEF2A03E9CBA095'
+    && '8B36B50CB3166825C840D888113C8E647CE35EDBF287BBBE9E'
+    && '0EF10EAF1B8F82873DAC4158F020761BE2E08633B7B78F8788'
+    && 'A3FFC4E980473DF421716FF8438BDB114758EEE1A9FBF5631E'
+    && 'F1B00A6900EE8D71884327D87087D88E2ACD2EEABAE404D30B'
+    && '5EB611C887EC15482829E8485616C16214295897C4B290981A'
+    && '97BF0132827E24093956E7221CF9C5AC528F9032A4A18C7EC4'
+    && '0A948D21E130B6710F7824761BE3F00B334CE2105031291EDB'
+    && 'E4373498B18E697803E6E9682B056F8B60107FC37BEFD8C636'
+    && '0FC367784C18E0E9D887C1E7540F9D3E71F012EBC638B0C10D'
+    && '15DFE34DDC60FCC8955AF930BA251A2BC1E73ADA6125E46924'
+    && '524E748661F44487F586015672AD01EDC258A60D82224818DA'
+    && 'CB473C68AF46A2228E0155968C418EC3BBF6AA1800A01848C7'
+    && '1DD8E165780435FFF2897EA445BBEA41375246949A0595FC23'
+    && '19DAA11EE0811EEA211E9A8119A20119D8E41E7A2319B80298'
+    && 'BE01FAA0C120B4A14244653026661F98E49CD2A21DB6611D1E'
+    && '824ED0A17824EF4B7C4EFF8AEB6F98C53F5622935A4F9E0024'
+    && '9246E2000F700253A87D7483482EC90C5162E688C2AC9A417E'
+    && 'CC2A9F94E3C00CE31FDE61625665AFE0699F044D0887011BA0'
+    && '501F78501CD0A11E3EA488FAA11D88B04CC4A496180C2DD601'
+    && '4C7A27E1A0C11FAA673BF60419BA221DF821E1008E1AAC8729'
+    && 'FE01B67C49D0980471187127E2062BDC0328AE652D90C10BDD'
+    && 'A7680E661D44D09A9064022388CB88112E9C2119DAE74886C1'
+    && '19AAE16502041CCC0193AAE11CFF1022B9DAC1192826423A62'
+    && '348A681FD8013572066156095BF6E11E56CAB5DEC11B20AB11'
+    && '39861ACE42949CA939364A1F304C9A5A891A56EA39E2C329D4'
+    && '641B746B21CEE33DD0411E86461ECACE3D9488BEFC215FB843'
+    && '2B9C277DD4A70B7511C88A468572AD862450DB862448546F1C'
+    && 'A6A13F88E43F800C0C47621A70CE1818691AE2891C2CA31DF6'
+    && 'C834B64110A3218D42E28EFACF768401179101C158322AC4C3'
+    && '1DD3E137BEC11FBE8F19466C260EE837840819E6A438A081A6'
+    && 'AA0219D80519FAA53E62421CF4C1E098E169B04111EF012A58'
+    && '2B2D122EDF1E6F1F6DC21FABE616278FF226F2607C4ED74892'
+    && '238771600029F580AC2E86611A5CA293524818FF95811C1CED'
+    && '9FCCE1152B0E1CA421F7C6AA23EA4155E0C9192249466A6885'
+    && 'FE439FCE47E6AE414A5408614A82C35A28F32ACA2DD8E11DD2'
+    && 'C13E2E8D2D9A611C10AC59D6C19586614F98218D5A69B46C42'
+    && '4DC4E626B0E22C9DA2870466B8DA72C8C090A988249322138C'
+    && 'D8725086842EF082F45263DBC0EC1BA6A173F66A51FCE2303B'
+    && '67469C8E464002584844181AB0868C41940C031EA001954833'
+    && '19F84DC3DEC24FEE23779C852650D14F8443268A438810513E'
+    && 'F6E426800B28A4626FFC86387BD338C190485A824808142E77'
+    && 'CD184EA22EA6E18E586E1BF6E1681E661F4424427A06ACD62D'
+    && '92E4E9577685D99CED9280AF37A8C9377A632BC407D49A834C'
+    && 'FF82AB4C8063C2C6E45A52D42692826930CA1A0C0E467F0AC7'
+    && 'D0856A9E2228F8930B83EC3F8BEB2203B42D99E501F5B2192A'
+    && '4A5ADC8176F481536424DDF8EB9F66C69B16A6189A4157E630'
+    && '0DD7732735AC5A8C6869E80308318C1ABAE137AA82384E8A4C'
+    && '50D4367102979E0297A0093F6F42E47654F2D4722D8F044841'
+    && '922D87F43F3B09C8B6CD2FA2211FE8EBD4424C1A8AE11874C6'
+    && 'ACCC0A7462437ECE2184C8ADE784742F07265052882F9F4453'
+    && '6B28D02213509A254497656FEE744C7CB486F4F49A80B338DB'
+    && '1246E6C21858CE44E4CEA63863AF4844555C447474C5228225'
+    && 'E720F02EEBC218DE411981B09A6A6893BC68A504C66F006545'
+    && 'DBB38B5EB426FF6034B8A6953F793355B155FFAC29548F0DEF'
+    && '2C431FDCE55D3E241926271D6CE48FD82984722E9046D28602'
+    && 'C5A2BE443DA147547BF45F9AA396BEE44E812345958638EA34'
+    && '29B6101751355B09F69A560200546518CE4AFD1AA5B918E430'
+    && '5A8D2F4624D9D60D47786500B114828CA5BCACEE4BC4F16570'
+    && '071A5402D086306198C16449366196410B7FA87886431E87E3'
+    && '3AEAF429C804779835320B366791D331F8F21B14841DD8811E'
+    && '264B1FA2CB225A8508D1F0360C8A24BE415165C3257444518D'
+    && 'A14662A34840E2D98204846A24748C41511375ACA40E479084'
+    && '5387E11B9C243FB87054EF034F871349EE023875564F990A41'
+    && 'E7E13FC0C11B94A1A2AAA119FF52AC192C4263BE6B6AA5AE57'
+    && '4BCFBA42C8620F57466283CA42E76F0E772086A1461295E78E'
+    && '012422972377F353E9B547D7B66FD6E752E33674070556AD29'
+    && '68E6E11D62EE0EA39347E08131726E24EEEC7527D06251024B'
+    && '6F6304472F026D37DAA42D1C9DED773BC9765E86185EA65E75'
+    && 'D2785FC278D33673DD567443B748808C4D4C8544B6616FA1A4'
+    && 'CEB04C7624B0A18881F4D890239133858CB56FC87759D3B68B'
+    && '94777395D745F3D55A850B55FBD4795375017B0693B281258E'
+    && 'D14884B176D7D072F1692E1D30C88CF558DF424891F573D516'
+    && '8131D58B301560B6946FB654600A54F586347EE5D70BE7F63F'
+    && 'B4AE19C089C3CE8185780E4AEA52767D649FFF30B7E4585555'
+    && '275822F132407FF38587AB0BE1F68269782E7811C8EEF01CDE'
+    && 'E11ED801BE7C461838132E865104B91373C1B7F2589538DB76'
+    && '893F9789D1968909B48669B84861C6FC4ECD1C5562E6901173'
+    && '23B0887B2E4FFB431909587CCD577DD4167D1B586017787C43'
+    && '745999B73FC5181853588AB5150CB9812FE8A61DAA8A1B3E32'
+    && 'D7E412822A1574BF7038ABE98015F88C3B77F26E768D9F1859'
+    && 'D93881DB968E81F46F5ACE1DBEE12B600E258384C3DA35867F'
+    && 'F32E2439944559741D2D2413661A3E5819A1C425449285E9D8'
+    && '89DB708E81759469398CE5E2922A6AAFF252CC4672969B9760'
+    && '09188221D88DDD188EC9D898DDF55A6B596EE1F226A5EA65FF'
+    && '320F009C01E65EF83F61189691A43F4795591159731B389BB1'
+    && '799989D46088C4732C049FFEB4488CE1048179608DB33B0B34'
+    && '9095F99383D48527B89383EC97C5B92D4B42E654CC1DA0E123'
+    && '8721C9506F9F31388A0D3AA143F26D43F2631CA2194C59965F'
+    && '199BDB10A1DF76862DDA7D325AA1311819E5E24F3FDAD3D861'
+    && '1D5AC2A369D9852FF589297AA59D78A3397A225D82C3608E86'
+    && 'C839A1F394A2115A895D1A945B18945DF9A575F13F5AC28F42'
+    && '23193EF20D813AA9951A70F0E2603C1A0C11943169081AA261'
+    && 'A9ADFAAAE9C21848DA0191B324B801AB9113AC971A7A2DFA60'
+    && '8DFA57C53AADAF1A4AEEC2609845444058ADE53AA9319A5906'
+    && '74AEF1FAAA2CF5322F612EAFFD5AA9EF7A1A6AFAAF09BBB00D'
+    && 'FBB0113BB1159BA9EF7AB11DBB868DFAB1257BB2291B700202'
+    && '0021F904050A00C1002C15000400B100EE000008FF0083091C'
+    && '48B0A0C18308132A5CC890A0B18610234A9C48B1A2C58B1883'
+    && '25CBC8B1A3C78F20336E0C49B2A4C993169BA15CC9B2254A95'
+    && '2E63CA9C39711BCD9B38730AFCA6B3A7CF95E37E0A1DEA911C'
+    && 'D1A34817222B482FA9D3A702915123E84F203566DEBC41DDEA'
+    && '536B416EED102EE54AD6E53476EBF4550DD6EFA0B5B2705742'
+    && '6BC6B360BDB8785B6A1B27AFA0BE7D08DFE61D5C9319349BC1'
+    && 'EE095C3BF09FC0A6E7046A83660DD958C298171A86A6ED9CDA'
+    && '7CF9F4A95DDC8F9FBC6DD052336366F972E6D706A7261C3DB0'
+    && 'DDBA828261EB6E88EDDCBA768C13EF1E4E51DB366F61154726'
+    && 'CE1C22356CD61007DB464D5BB7E6D8215695CD4CB6C0DC0599'
+    && '65FF1F1F0C3CF9F3195DA3CFBB7C7DF3A5ED0B7A754FDC3233'
+    && '6B75076A9B5ED13C7DA2C8B0460D4FC8CC170C4CFFE9F64E74'
+    && 'DFA4464D37D488238E40D81804588278C193CF36CE5C73CD34'
+    && 'D340C34C85DDBCB31F86B07DC34D36E498938D33CF60938E7E'
+    && '2866661934CE18458F8BD350D3976435DA988C33E604B36336'
+    && '3D4E289092410E16E034D7B4F8E233D644184C854D3A89CC34'
+    && 'E75CD3218C960976D736E86409D75D13BE830D34CF40438D35'
+    && 'E0C163265E1762D39D3670FA372759FC18848D810A6923CE8C'
+    && '10B9B3674B659624E740861E8A5364F1383A9C9E921276E24A'
+    && '9756FA1A349AAEB48F621789D7694F9156C429A70BE5372A51'
+    && 'D84C630E6A0CA9FFBA6A48D705734E3C6DD138EB51172E59AB'
+    && '41DB4C982842A812245BA3BB82B46841EF0C94A836EFDC5590'
+    && '77E1899AEC4AE874836530F5B4236D307DA6932942F57CB34D'
+    && '33D8C87AAD47EA04D3A836276EC34E64415154EFBA1D5D56D5'
+    && 'B0E03DA31562BF16B4AD40A0E2ABE840F608D4EE40D09D08ED'
+    && '41D41A0C9260DD58E78E3DF6A8533174704A3C9435D7B9A3CE'
+    && 'C2213DE47146D6E0996DCA1365DAECC92409362C47C6980CB3'
+    && '4BE3722B11B23763143055DA66A44FCF15A9470D62DBE8F38F'
+    && '3FF149F432D125FD23CF34167923EB3C50E759E542E8DC8650'
+    && 'CE0A01B68C33CD184335D65097A74D3AD80C2ADB8F04FD9A8F'
+    && 'C016D5A34C34C4A43D9037D88CFF434F38CF68830D3B5FFFFC'
+    && 'D1320981335034C9EEB7CD33E194530EE0E260637830977B94'
+    && 'B7425E0BA4CCAEE2408E0F3DE58C3321D8945E947731C11CC3'
+    && '103703E9D379A720478E4FE9E8643A63A43F5768ED402385B4'
+    && '4CE784AFEA0E3690034ECEA0C1BC1CF1404C1AA45E48FC5C33'
+    && 'D0E79A62A30D356C3E7829A1C40A447541364B847D43D30C9F'
+    && '4D367B0E2C103AD0C973CEB71315ABD141E51F244C44D754A3'
+    && 'B8F5D6CB52EA04922B91A84E22E0A8463014A8297881C47E25'
+    && '295E3036B72B9E49041BC8F8D1D0484241810C0D71C19086A3'
+    && '965591B9118419E0A8473E4AD52B89E4AD540571463088F423'
+    && 'C5B1AF52FB19E041DA019A137A631FF500E2DCFF0AC611621C'
+    && '23807A2B14AEF6F10E1386A584062107399A22901B56CA7D19'
+    && '69623CD2F1A97CDCC384F983083B96A10C6538C3192C32C791'
+    && 'C8F1A2605C6319480C123F6088917A604D1FF5C0633CE6A18F'
+    && '7EB4851FF7E006318AC13A8930B08AC1C886398C52A97C00E6'
+    && '891F71473ADAD10E3E16641D20B448DECEC8C860284E8413CC'
+    && '52A4EA413F8E88C82643CC8AA14C2891624803941374DD313A'
+    && '893506BAAE494F038965B4D2A703496721FB0BE54006399042'
+    && '2A44191DAC860C4715BD84D8AC2F5A0114438229905B124482'
+    && 'EB68E1020B728E4E6A2A610B4946F04A69116B1A6499081161'
+    && '34CEE18F7F98039D8712873DA476AF832C0341051408EC0C52'
+    && 'FF4A7312E47CC7086841DAA12E8180838A9AEA063FA4699067'
+    && '0C8495093161210FB93FD689909A7953DC40348A9068585153'
+    && 'B323487B24188C901684718A11A1E210BA1093DE8C9CE521C8'
+    && '348217C684DC461FFC60C7210902CB652886A373029B417219'
+    && '0C8832449CE244C835EAC18D681C8318CAB8251113092E84B8'
+    && '34480E6D49327E170CAA21A81ADF12A108ABD141F06D932046'
+    && 'ADD12F59A29E4E1A93A7037925E3000353473D23AB24815C41'
+    && '3815BCDB74509B05F91CF6D0A6A9BB020EAF1F899C4026273E'
+    && '0415E418376C072C03683D06A6B57D869DDC5D43A28D700804'
+    && '70C180C63782F78D9A05366FEBF01A4B7775D7E4D5B32353D1'
+    && 'AB4050950E13FFAAC4988C0BC6DD4EEA4F849C2F486C6A6DD3'
+    && 'DC2211EF7816313D2408358F0149815412818742AC42328710'
+    && '718468B603016C4276CA10ECB1E3B74DDACF703352ABF634A3'
+    && '192E455C589A2B91DE1E43811FFD8F742DF25CC3DD037CB9FD'
+    && '083507E2B56338631EE6D86FA50433A16DB1726E2424A14018'
+    && '47D890E031B00605EF9CB0E19D5AD53518749C0C34921A92A8'
+    && '06141C7DE4C66FCFA15109A3687B4F3BC73CC435ACCB7EE33A'
+    && 'E76DC96F7AA990DE6288C6C1F8C65A9EA79076985521B09448'
+    && 'AEF2D10F78B445BB871A1AA1BC5891A92624930AE9606386D6'
+    && '0F9CF2239F0479EB9EDE910E395DD820FB513043C62B10291F'
+    && '431A69C1A95AFAE4E4438D83FF6733126A463EE7AD8558D3BF'
+    && '1E62D13DFAB8347FB445A75E3A461983A1E5F3E42C3EDD9859'
+    && '4460085483CC6D1FDC8DF23FB9910F7EF8A394FB0B6631048C'
+    && '9DF8AC691BE738073DD8F1AF926C247802B9062129E2D16038'
+    && '261F0D1608A71384AA7BACD539C1100F1617E75C150E046EE6'
+    && '8B8602F9313FF6A2472B2685243B6C320E3923C41BB7564835'
+    && 'D2DAE8611AE496D5C01E3CE0B9A75F323421CE3608AA373234'
+    && '6EFC3818FBDB9C9489ECBA1965C3C4E3996A5FAA4C90BA4867'
+    && 'D77E9A484D83318C42171AADFC10AB1B0D126BE6104A31ECB5'
+    && '89E2D62410542F84CC0741571107C2ED6C9F273F8709C606EB'
+    && 'F18ECECDA818C6604633C41320888843363CFF26C8B92622E5'
+    && '8428A31AD7C09E8D758363460D84C6CD7886C39702C1854832'
+    && '210E271F425A3EF360CC831DB72C3A66D8F90FC7F0C7E8E11C'
+    && '487EECD3906D7C231FC19910575B6990960FE41AF9CD4ECDA5'
+    && '25A7BF483DB44087C83972EA8F822188534823E974869BB720'
+    && 'AFAE468B3254AF3668C2680964DFC9D87741A4515060C19521'
+    && '4373DD2B2B7517C0724325D0EEB93E3955F38787D4B10AC9A4'
+    && '51F3B641817037AAF481B83E83E18DE5541BCB0939F74008B7'
+    && 'F581946FD6C13019EA3D07EFE6707BAF1181A838D8E1408534'
+    && '23DA04816431C29E10341B4419DFC0DE3EBFAE1BCC2344A335'
+    && 'DD276D05B20E6B01DF20AD2F08946B337A822924ECDB6F4EFF'
+    && '3132B99C0B01751D77E93C4A1437924CC6711F6D21C6378E41'
+    && '7C8384BFFBE4B96C418273C1700FA41910547807427DFB0365'
+    && '5E5710E4600CD11074F4415288C380B9763F11987D03211EC6'
+    && '6075CD000F1BE670CBC138CDB05B1B9437D1100DB5F7154122'
+    && '800D4181058154C9D00C33B50DA8F60ED2010E88C33873034A'
+    && '02260CFF86210557103B98380CA112E7720EB98518DCB041C3'
+    && 'A512CD126402212D07881E0E076F82472E0C7122C1B356CEA7'
+    && '11DCC00D771144EC80795755294F18114FB361900737FB2179'
+    && '0AF165492466FF4721C7E18667E710A3E70EA082640D610CC3'
+    && 'B08733D533DFA215E3631081487D76012A74147BCB200CB0C7'
+    && '6FC3300DCFFF300D7A380CC653540D414EA9911058E30FBD74'
+    && '64CD43870C310CC6903CCF5033927828D2010F870811D77710'
+    && '5DE8410921770E310C90233980B3879DB211C6C64F634211B3'
+    && '735953083C90430FB7F30CC3303D59D28308B10DDB10294425'
+    && '13C8900CB3A85996D124335217FC97388E451716610CDA908B'
+    && '8B237A05320EC9630FA7618CE4510D85C44ADB603388A32208'
+    && '013E88A18212315559082C0DD220EC203B78D1178AB8393A48'
+    && '771D440CEC400FEC1347EDE849B1A31010181192B78AD84710'
+    && 'D0F027C8B00DDEC81552460CD55610F3100D68447D2AC151CD'
+    && '100DCB500DDF700DECE04D038138CBC119151811BFA47F0A51'
+    && '72889186AF0517F0D017C8FFB8100AC486C1206CE4707B4408'
+    && '12FB440EA722872AD70E30016CD21317FBB00FB0C8104D4910'
+    && '71246519B961B9668E152127DB300EECE00FE6302FCDF80EFB'
+    && '6075D0304A6BE20DEBE00F41310D0E8914F34064E6034AFD00'
+    && '53CAA051AC333605810C70970CC8508F1311296C692BDF3035'
+    && 'D1D62CE86075E7406486C20CE9C00F4D270FD0A01519F914F0'
+    && '979308B10F268464C1234123D199E722221C7117DDD00D7343'
+    && '3588310D338235DA3423F7F02D7E531620271084F48304710C'
+    && 'EBA00CCB4710B3A78A3DA98C0B191180121CC5D22810156D91'
+    && 'A17A43A183C2600C83347E40763E4A391091713E3A886EB289'
+    && '10CD30126D99108C299D11C513A14610EEFF900FF5E00D9391'
+    && '8C06919B3DA1888AE83F8A689D0D31995D6710B9854D7BE397'
+    && '12F16DFFE770DBF00EFA8910F3504ADB6912C3A088C5005565'
+    && '440CC6509DB1771043D39A0DB188C1B00CC57048DA602803AA'
+    && '60D24428F22810DD802CA27710FEC712066A0C66E425CEA0A0'
+    && 'B3398097C9842F77109BA37C1EB44CD1701730B94FEDE00D8A'
+    && '918A068182226A28D731A2E2E9138A68A268640E2EA2A2B469'
+    && '5013AA1082E43999940D77D166127876ED60134FB41C4D5410'
+    && 'E240A507212ADAA00E17BA241461413751A0C670A44792A2EF'
+    && '099FD6F64F21E441F2400EE7935B3B151973B30C0F017F04D1'
+    && '2BE2120C97520FCAA824F710A20DB11FC822A404112993FF94'
+    && '13054A0C471A0C2EC2A60CAA10E0F0397D520FD7E01B08111C'
+    && 'F0700FEBD00CD6B30DFBC01827A268DDB095E2388818F132E4'
+    && '180CF2600F44D54CFBB745C1200E73039328317E901A258BE4'
+    && '0CC8A49C0B817CF9381024F915E7232DDC500DD1700DE1300E'
+    && '67E448251516EAB21F8EE8219B751174953B61FA0EFA903162'
+    && '5A3179A210EAA7138A430C90FA25C8D49CBF18420F56101C65'
+    && '4DF5709B13BA0EECF00CB4889A30B51F7DD355CF1025E4300E'
+    && '0D3217A8829FE4B22D2293971491722E210CE85A46C1BA699C'
+    && '767FF1251074044AD2C03A79730EC1483ACF704F7FA7108615'
+    && '0E9BFA11F032A6BD971006C29331B1A08384AEFDD8A60D4166'
+    && '22940F4FFFD99390630EC3680CA2DA10FF9AAD1D012721032F'
+    && '622210CDD80DD1435D34C13A0EDB9CC124AC12C18431C45F33'
+    && 'E40CE1100ED3A08D0BD19AA016811EF1166F014E6B33A60CA1'
+    && 'B4C3513C7D777C88C325137A5B55C711DB3222575210D1F93E'
+    && '09C2404D210D25D893DF700FF1B00E1525A106250E3671B303'
+    && '611366FA6C02818705819C34A1A727410CD7B0390AF4840585'
+    && '8E5B5A538A7353FDA096363134E7A0A804F19F03013ECDA813'
+    && 'CB107E958A11D7A083183941F7F77D062178EC700FFC502FE8'
+    && '60A8046410E910A0B72A108EFB1FEB0355C4500D529B5DE919'
+    && '5712B10D751B19D1F30E1254B703319AB0510DD26B11D23073'
+    && 'F4736184E3B8BA0BB204FF231D86AA4327518C4E915B99443F'
+    && '37B510F0B02CABD896FBF10D891B180D312839F4B5A5281412'
+    && '869BACD80F98C9B811C1B018611E585425D4501DD640AB3821'
+    && '9FC064671EC442C8DB848FA57D3A011E29330E41C131706218'
+    && 'CFA1AB10819511A10F960911D8136902E10E84955C8BDB84FA'
+    && '900DC7EB922C2145DF5125D0300D64B30DAD79BA31B1B71241'
+    && '4DCA906C080193BA8B3E91390EAC5A1127E226D480C1D7C022'
+    && 'D9000EA1DBA10401C232517FD8B341C8780F62A933BEE711E7'
+    && 'D036F2305F039C3239A2463C623978A19E022141BED663F5C0'
+    && 'A32B210E542C11064C0D39D2148B340D32F211E4FB118C010E'
+    && '40259F0C5C10B0767B19519318211E70FF320D8AE422D74025'
+    && '021C1152FC117D14A7CFA7ADBBDBA44F416135DCC43032AE14'
+    && '318D4F110FF37A110513BB11910E3AFCB5079C1A4ADCC70931'
+    && 'C73231C80DC140D813635C010FE29027F85611930C64F8F711'
+    && 'B4EC49FE3311BF89562D21B41F21CB0D51B1653610F160C292'
+    && '169F03577F17110FE54A12FBA068F92213F5F0C218915BDD44'
+    && '0FE0405282DB116A5C10E3220EB5220F95D7CD20E1C11C010E'
+    && '456746043186CA3210CB8299D53521F17069DA34BF3DF19665'
+    && 'A18618A124FA50308DAA2BD05C10D962B73F7148003C4D2B61'
+    && '0C86EBAD1311980C910EA33923181D331F215867C5150B8975'
+    && '6F6B2B14221091C1AF292D19F75291FDC1CC2EE47539FFB8A4'
+    && '17B13F3EDA1013BD2CA44B10FB312C021D0CFB20BA1508CB0A'
+    && '71746F5A10E8EA3AF82C6B9429193332236F11D404E1B86E48'
+    && '323341D5C2C4D45091CE1137109C02D3FC046E3D014A5EADD4'
+    && 'ADF3CC2761CD0B212DEB30C4C1508DEDF134DE20C7DE3910AD'
+    && 'F814233C13A8AC760491CD51011288EAD0466910EF3C114FF4'
+    && 'D60521804D0D177DA10D8A11BCD38B394CD20FD2DAD0272C10'
+    && '5A718D0751D80B010EA9B80CCB5A16D26C102436987EB60D6C'
+    && '29417596D3730BA8D3C530E8200E7DE27406C1D915E135EDD0'
+    && '2C7561D36FAA7424C1A99EF45B6C6DC3DFD095ECC017B80C11'
+    && 'D0B01CA2C2CC2CC324D6C0CDC2C111E7003BD700C54186389F'
+    && '436632FF274C26710E90F444066B10E8904BD7271BEE33151D'
+    && '53219E5DBA7D6C138A613AE312C96CB10ED1C051A2FD81CE70'
+    && '84280DCC3C1C179452257962B06D431014533124A40E728235'
+    && 'F2A0C515C18984B37CD5B0568D7D113DB87C7BED8CF6D1D7B7'
+    && '0A4E560166CCE20D09BD41CCF33503C169FA90DFC17092D03C'
+    && '0F75E9D582A780AE48108D562A92ABC95C21C60AA1825D2B6A'
+    && 'F4C017C1A21475BB0FFC500FC2E61887080E6CDD1055D17980'
+    && 'D539A59D143C4E1124B295DBD0228B24D609D116C1912B38B6'
+    && 'A4528638FB949B39F9A26461DF14013FA771B5E1700EEFA024'
+    && 'A3B410ACB328B95240FD20D90471D60B1464535E16C76C11EB'
+    && '601D65620FDE1014D4FFAD10846365FA303776D416D9B08A5F'
+    && '06D779A19703E159555A11C5C370C6C1BC10110DDF10EA69E1'
+    && '0F7CC60F66E76AC3DCC5D8B175A0D511128418EE90E82AD725'
+    && '7DF10F6AD1747EA47104F30D3B1547BBFBE737EDA643711D98'
+    && '1E0C8C251055BE106AD1179923EB504763555615ACC4A867FD'
+    && '2D837CCE113A14D5A1CED05111ED62287566B403E1A516B2B8'
+    && '99C8162B3410B83DD1E7B125590538D020CA1051213C333426'
+    && 'B49B57425DAC740F4FEE5C807D12784955E02D1361881081DE'
+    && '101B97AB6C4866E70651B9E8DA9A140CDE749135D1AE8D420D'
+    && '847389ABEC11D1F3E0FD100FDE42D019BD11F040A13D1A0CFB'
+    && '64B82761DB06C169C6D442DA641384FF820E0F1DBEF22310DB'
+    && '3037B92427B7F13BC92E11A0B10FF140473FC3B2543110F3E0'
+    && 'CC20B13F35533363A34812EF25E8EA3952B60EEF70F0FAAC0F'
+    && '3F56155DD6E2D0909142E8111A42282A044441042AF0F03C46'
+    && 'A9384DB3E126414D4E1C7B8B580DA99B0CB097CE805CEE719D'
+    && '0CED01D36F7C6AB9380D85F70CE880CD41F4C6B8C2475A9CAA'
+    && '841267D41CC13AA10C4D0CA9E9544728F827B2F2EFB3D50CDC'
+    && '900C89AB0DFF6E568DF72997464746AF10FBB6A0294E1235E3'
+    && '2120074230C1DDC90B9C3EC72C0C8118E5E76898937A03D116'
+    && 'F2900F1B0F1158D3E433E10CD85EE30BA6E31D11C6E3D0F897'
+    && '2D10C77B6E7FA2104D3437F340570A1C112B8638EDFFCA1288'
+    && '03721D6432BBC512F2F20F414E11C16342E7008939E635F9D1'
+    && '2D3CD411B2D2FD276132E6600C903B1047F834F89EE900012D'
+    && 'D8C07CC1DA0DF4563058BD7903839D1B388EDFB8670E2D62B3'
+    && '98915A468EE98279B3A86FE0C677F9F605EB174C1C47962D5D'
+    && 'BE841993E33576D9C899F3474F1EBB79DF1A2EB428CDE53299'
+    && '45E5B58406B2A5B5A2073376CB28B2E854AA55393A0B466C59'
+    && 'B260C9CC0DCC66B1DA406E565F426566566DCC6E50D7BE850B'
+    && '335AB065F38C0D8C37B05ED96042610A8B1B38A3D298CC9009'
+    && '460CB799458819D72586AC761C4B6C1B235F96A930185F6EDF'
+    && '307F46CC14F46898DB383A0D0698F46A97A25963BEEB305F3E'
+    && '91DC9BFCBEC69D5BB743A22D95B924B65BF8F0C4521DA2269E'
+    && '5C79607F03535A7CBC5CFAF4AAEE382EA69E5D3BC7B9A683B1'
+    && 'C31A6D2ED6EDE5A593BBD672AEF9CFC80EB337BB2C3A7CDCEF'
+    && 'E9739C7C5F7FF67CDBB0EF07503776F2EACA98B10244F0B5E6'
+    && '8281679BD8128410347822A470B5F92AC430430D37E4B04397'
+    && 'D2F330C4A9BC13B144ABFE333145B15464D1A5935A8471A0C6'
+    && '628411451A3F0B080021F904050A00C1002C12000400B400F0'
+    && '000008FF0083091C48B0A0C18308132A5CC83021B28610234A'
+    && '9C48B1A2C58B18050ECBC8B1A3C78F203D3E0C49B2A4C99319'
+    && '918D44C9B2A54B942A0DAE7C49B3A64D85316FEADCC97360CE'
+    && '9E4083B244C62CA135A14893524C5654A9D3A714D3159D09B5'
+    && '6AD5874DF7056B5A90ABD5AF40BD415B178C5F3E6FC1E0815D'
+    && 'AB94DAB46FF9DEE50B3697ADDDA0D0A6DD6BA72FDFBE7EEDEE'
+    && '0AEEA92F58BD7DF1F2C523CB90EAE0C70D9961A326CE5DDF79'
+    && 'FDFAE5D3D7EF9EDF712A895AFB09B934C571D3B0B9D31A2FD8'
+    && 'BE7AFA62F77B7D8E1A5164474DEBA6C88F9CC1767E370F74B7'
+    && 'BB38456FF2FEF96347D09AB66DEE980B546BBCBA447906AD59'
+    && 'EBE6CEDFBB60DFF47DFFB74E7EE1B8EC02F7F98BA74D20B5F2'
+    && 'F0278A337CAE717CF2D812E66B6F3FD8D1878EDDB7DB39B909'
+    && '68E041E814A44D81071E98E041DA3528A1510C4204E0847779'
+    && '436057B9CD872179DE8813217A06F5D3904A1B7DF85437D060'
+    && '839B73473D98DF401AD60391572A0A958C40DBE0468D6D3176'
+    && '14608E4031F3E264D6BCC70E75180D49244FCC6CA79D76EF69'
+    && 'E30F3CF57184E3933C8DA6D294CD19C66571CDA4334D6833A5'
+    && '43D08C63EA664D94078DE7619B74D6D953967419744F48E3D9'
+    && '5993376A8614A89F84166AE8A1021187687CDEA0B5A86923E5'
+    && '338F45DD3C8A94568352F48CA54269C3DF44C89D87D0A7CE70'
+    && '0AD34A7529E48DA7A206A30D9BA6DAFFF4A6619D4D2A9037DB'
+    && '28D46AAC357D578F37D6CCE8CE7CFB11D45A41F94DC36B4D5A'
+    && 'F148CD9BCFE6964E6002E5930F3AB00AB42541B92E5B123646'
+    && '8A46508BD854CA109B736DEB6D47FFC88366B80221038D37D8'
+    && 'F479D073C138BA2E48ED05CB4F3ADD681325B4018319D143F6'
+    && 'EE0B923E0B4EE97085063D989031142B4CD2C32332A4E8413B'
+    && '0E94A2C517A189E668124103724D2366CB2D46DF9C9C51C699'
+    && 'BE27107FCD46C48DCB1CA503B140F7C87C513BF38083F3441B'
+    && '7703B13671B5A36F433513548D890365333444731AB4CF39EA'
+    && '4E549840D7487DF2CE0989432D47F50416CD41ADD9387530E6'
+    && '16D4A7CA03F9EC7343EB2C63D0D6594A73323A0CB3FF097541'
+    && '476D239D478C05534C4276DB3D36A7F961830E3AAB1E65F240'
+    && 'A97EFA51A90D9DD38E3FE7346D697E9E066B8D3809BE776C42'
+    && '5953A44C42EBDCEC9A56F508CDABD1E54A1C283A550BF4E6B6'
+    && 'A91F743844D2CD83A7A9DA6183CDAE06C15360B71F25234C43'
+    && 'FA9C1D4C36C4C40A76431D73944C31BF2B54CFEAC14823FDDA'
+    && '076D93ABE7143DDFD0F8D548A337A71253C40CF32E791D7E30'
+    && 'E0AF3DB740CDF8F392EBFB4A07004B061263248418DCA88702'
+    && 'A537BEB5D9A81903D991AD5C6391EE198418C4584635E6510D'
+    && '5379A86D11391D41D426907E6CCD2318C4E031AAD1417E70CA'
+    && '721979C70983F18E4C49A46918AC06318EB1C26A44431967EB'
+    && '6030FF1A48BEE114067D13B1510A55A8426510E31AD130C637'
+    && '8848A79AE5AE238909863EFC27100B5684183A5C62F50EF5B7'
+    && '93907020E0C8DF44C0278D1DA6D07DF8B3537B6CF40E112EE4'
+    && '7A0D71DD1923A28CE755E318C1C0A01389018EB9484F88ED58'
+    && '1C865A05C28E2C0D21F42B48F5C6180C0306437D02196331AE'
+    && '11C77DE8436D7AB3DB4028D9206DB0C31B766C081E07E295B9'
+    && 'EC6847DDBBC6FB1892BFC205524C052122384879A07EF02361'
+    && '1059653086444581EC718D0719A032A4C18D633871510F5308'
+    && '33B226C485546F757AE3210F0502C8EA49439B5C430831EC57'
+    && '2836192C21D3C89E41B227CA9A494D94B70C67F59E274A352A'
+    && '0483A67AE4407416FF4188C053207C919D40A4B13A400E8485'
+    && 'E0208B32C8594483806B98A441C8F0DEA18C67060390E0FBE3'
+    && '31CC618E47ED0F218D6C08347EA44E8428031C4254A32D2F1A'
+    && '0C7F3453207F9CE040FD244C8BFC689A46F20A0477340D080E'
+    && '44992CBDA54005F2C36070231BC7B0D13A2A4A27181EE498F7'
+    && '029C9742F3B16024EE92714C083758A88C961DD4AAC1E82039'
+    && 'A2B1D236650C23E3F8D494A8314D64182319C9A8D8F38486C9'
+    && '3C1D906708C11C4D1D86916ECCE728C6C346B0B0F10DB82663'
+    && '19883586059501C868A432186421A83DB969504261ACA610F9'
+    && 'D194C0950C6824231DD080A031C677B66380C399271D883CC0'
+    && '67D1213E4A64FAE48897A0C18C69FF18901FF1A3A70145290D'
+    && '444E84976D7A1135368610CC0E6477D0F8466807E2B96574AC'
+    && '9A000DC69E22025D3B39E922E51288677794C884D4C3AB0599'
+    && '254300B90EE09A351836649A41DAE3296DBC671DCC93C61EA7'
+    && '3B10994AC49B2C05A47E835B9174A0EF1C5513473FEA31C092'
+    && '0A646BFC8864432C283B6120109FDEFAD43EE662C27B30C743'
+    && 'F790693192115B8FA46A94D31B9E9FE22790C2B5C65A7FE147'
+    && '3FFC570FE2A4035F45F1694852B8C1823046A1868215F20432'
+    && '41170A441CEA0846B7061892D5554376A92A23460945DC60CC'
+    && 'C3C705396123D5F451921C468B5A29A3408451D74371B15A10'
+    && '712943BA2C117FCC631F7FD9CC0C0742E636C58FFF3AF778AC'
+    && '416E962B7D20D1B5FFFC302DC35A36C4D4634F4C3254B7B441'
+    && '6289C8AC2EE02DC8322C3954718E7289CA58473AE2011C3B07'
+    && '63974BF4D39E9E03B788C0636C44F68961DCA165838043C66C'
+    && '0E6433DC918E7E3419C4F1CC517BE6C58CCE561922B40D8688'
+    && '07624922DBCD920401F640981AC8EAB9301E506D737C0C2CE4'
+    && '2C3DE4C502E9B44112CD0C6A28B2A49D9B543EF83138837871'
+    && 'A1DD24C6EAE0C18D78A41743CC50643088331281CD68C70BB9'
+    && '752EEF47C1032B44BC0249C73A66C90DF30675913F2E48C7A4'
+    && 'FD1108CA781BE820CE8E30298C624CD220B384F040CA1A9F13'
+    && '0F841DC119C8BC04D2AADE55445E2E0A863AE1EA3B0713A3E1'
+    && 'D5FF3B9CE788E145158DE7C3CAE21FAA43828CCE6A4BE4FDF4'
+    && 'DD2D5348906B747B8C934D88B2D732B95B81D9206879E5413C'
+    && 'BE3E8130DB9AE216232557276E23EBF0DF0819FA5A5EBD1E1E'
+    && '1724E6DF108B763D3E1981BC43C103F96744B8BC4C962B3685'
+    && '448E1DF8FC6D9C66F4E31DF4CD95BD48C8D3752EA4C9C8C046'
+    && '3C4ABD15A61B6418676B3897176F60824E686CB9A2B49E7954'
+    && 'C9823483E4D0901743B641587E90901BB165E040A2A126516E'
+    && '4F204074F8C9EB04D57A4FD820DD3220329641DB66C47C38B0'
+    && '9F79300043907440701937D33D42EAA68C66547722C2107671'
+    && '40AD90C3FA3457AF1E48A0196243B50BC47FD700201157A78C'
+    && '5C9D23CEA9B225FFDD0F548F7CA8E5F6D3A03344064596A290'
+    && 'B066DF688AA3687BDD0EBE9520C520F33ED4C40D659CE31A54'
+    && '97239CD44F0D940C0DB40FD4D20CF5910E2E5417D4E00D6A31'
+    && '3F05C10D10F41ED050740A614933D72D10C45A05710D1D140D'
+    && 'CB0048F8362103A868F5753AB2A37B55D668944710B767106A'
+    && '6737F9D00EE00045C1C00E032850ED63552D471073217C8F31'
+    && '79384710913653C6F46106868105A126425810E7000E967436'
+    && 'B3541F83B70FDC70361A145603515961757C3F0559D77082E4'
+    && 'E10ED1D06889D331E9E00F3EA67C1041703777822D1373DE50'
+    && '3881920D41434A3FF828CA574C09C18408A14EE3816A27E40C'
+    && 'CDC00DE4D05126624087C349C6FF8027C6204AEAD620E36738'
+    && 'EB2610A3151180C83104F1744A236485710DE4400E9C91250E'
+    && 'E7875C2244C0657D12F184022134DB8081B99289423671B6C8'
+    && '0EE7900F7F264A32468486026C5EF47403415FF3A65D051149'
+    && 'C2370E3E950FFE3317D2801D68642ADDB38708F10FFF401037'
+    && 'D30ECCD30CD1901FEF000D83E38A030141D7A86D324827D418'
+    && '1285C10D45276368A16068373EEFE0426A034CB1C23D11915E'
+    && '36E23AA8C63C93B38940C845F3684CD7D889E9C86BA87828F1'
+    && '80444B130FDCA06EC24810FDF00F265490C438448976781A61'
+    && '0CD35055C6E1860B8610E2481CD04817D6C24A31A855DAE60F'
+    && '68E60F73318995971000300C344993F0918E5AFF2710E00541'
+    && 'D5D00CDF107DFBB40D7A06365CA186D285195C447871A510C3'
+    && '9017C3800C1E691A95386618E17BF9019307D10C79F10DE770'
+    && '0EF2700F2B160C149919FD000E37380D29791099A712B58628'
+    && '96B610F7902B3B821C1D0390CDE70DF5C00FFFC00F7DF1810D'
+    && 'F10DCD108BF6A81B20694D44D44010848ADC3012AE430D7088'
+    && '10C8900E73718D66D18911119177411653D945F8170D57075D'
+    && 'AB932BAEF30DA1160C31679711710ECA452DFFE00D9EF153DC'
+    && '809976020F83543DE7B03A22160DBA7988E22872813911DD20'
+    && '0FF4200FF5510FF0600ED0A00DDE501725C93F4E5784263339'
+    && 'D7607850B13AFC300FEB7067A857105073336A644FD16070C0'
+    && 'FF05983BB268CDF03ED42910F2300D8E828BEC900C81511731'
+    && 'D82DD3900EB9A22F33979E49D16DCB709061185D057138E063'
+    && '49F6D41493A39F06710ED0200E5A910CE300579EE50CA1561F'
+    && 'A9527EC1909CE8D50FDFA05C170A199E341773514D5DE59704'
+    && '310FF9C03C45A58791180CA8860CB9E259F2866BEBB60E1004'
+    && '8DB1287C36E27B8E828002810ECCA80FE7D01EB912A3493136'
+    && 'EE304133A40CC3B90ED7E085CCE56DF42610CBE055F084A117'
+    && '289B10A18DA0F89C4FA50FEC403FF030178AB2355481A03431'
+    && '4F0E764104410CE6B03ABBC44705D17D86E386BD791150166D'
+    && 'B5981E082131F3E10EEED01E72F6145CD63D698A555C9810EF'
+    && '939129374F8AFF7638C9F00DD750A70D419F08710F00D436E8'
+    && '40425CB10DD38716DD500FFD902B19F91415D31005A910EA63'
+    && '4F3F780EEC600EE9877637E255F6B9108038AB121118B6F498'
+    && '34A178F93774415710392934139446434416E62311CB798C47'
+    && 'E70E1D5610FAC269D8D06D10115240C16582947F506A10EB30'
+    && '1E635482046137D2233B34FA3BAFD111DD60A24E160CF4A04A'
+    && '47410DDAA02657447D829A7FC5C00ED2C0700B3140195957A4'
+    && '445E94560DCB304B7F2684EDF11DCCA328E8902512430E6919'
+    && '360E43AD811873589214C24093C6200C8BC6655B7610F9637D'
+    && 'FDF74C022A0DC530AAFB7036C0150D9307B13A99A7E82511DB'
+    && 'F01E0FABAB02E142FE401CA5FFB9138BC765C3B0780DD10E76'
+    && '430CD3D50ECE902B63B40C4EB43AFD604BF9201DCA700D0DC8'
+    && '2483C31FDED00DDB002C32EB3DF9700F0D7359DA710E7EA510'
+    && 'F950356B76138AA55828C7B399B41047A6103E1956C0115EE1'
+    && '990D06C41CF3E79C05F12C827556F2B14F0E232253E25E03F1'
+    && '576C514D18947F2C6752AC536FF8B63AAD23A5F8531FCB700E'
+    && '461B0DDE39AA2B1B253FB22ADE805323819A0AB159D182475E'
+    && '050F614A10447AA6398BAD17718309F48A569551F864379707'
+    && '0ED1700E51641020A91DF2A2B215B1597E6B1E40D8284F917F'
+    && '177B38858910600859CAAB10CAE0433E294A966B108EA9B71E'
+    && '1158AE120C72660F12337D04F1105169130DFF976A15314042'
+    && '845206310FEE8358D7F04FC7AB18DDA026C6B5106CF20EEFA0'
+    && '28E7A126ED4042E8901CF0F00EF3311F4E256A41919013F14F'
+    && '58E953A5C20D57A510013C110C32379CD110F0F029409914FE'
+    && 'C910FF140D63E48BA5C98A05B1A190851676A97BC8E082CCE5'
+    && '39056B10DDB06BD59A9319110DBFF3AB03D19509C10F54B423'
+    && '09B431F5800DCA12AAAC84117F7610C43147BC8BB3C7CB1017'
+    && 'AB107AE53541A748504344CE009845985EDBC01FF0200FA097'
+    && '35B9034295A32F854627C97B37D4C246C17082AAC9A251568B'
+    && 'E3700F7C790F5E652ECD223495320FE4206DDA50C41F024F32'
+    && '0C507B5436252A10377B6952BA0CCE8039E9342E79320FB7FF'
+    && '27AD427121C3EB0CE0133BDE454365615F36C61C5B287D2C6B'
+    && '9A0351B5C37410CD1A11A7EB14AD4710E18BAAE4E035D2B0AE'
+    && '05D12CE2512DA54C106D4B126A427141F1BD16A19D12314B5A'
+    && 'E14365510FFE30B602A1826D1474F413CA1071C715E11B8211'
+    && 'CB7F3910DFC0187AE33FFEA31559863EF1D01A0008CDAE2514'
+    && 'F9B10D1C952BE6A41D782C11D74513D7502AC6400C67C3C8C6'
+    && '32100A546F05010E813C11C3601BE70C11E7B1293FD6B7BBE1'
+    && '552C2410D9700D2CC74936E28B078DBD0C41C00C312FEBC096'
+    && 'EA62A60391B75472B5DD7B10F9DC12CAA057F3703A656423ED'
+    && 'E06A1DE191DB6239495212976511195D135ECA0EF4000EDF20'
+    && '34AEC30D2CFF0C119EC4990B01AB9C4C2326F130CFA21B4DC3'
+    && '493DA9AD176123965C11D11B123E2D128E4CCA18B10E85712C'
+    && '47BC106A51C120714E1212C61C1B5ED5A0D302D1B004511884'
+    && '0712C064D10E41125AEDADF736115B354A0C4511A0DA12F1FA'
+    && '112BED114A54123733461A0BC48671A70A91D40C3C1D240195'
+    && '849D11D54086246A5754396707F165FD064696883D090135FC'
+    && 'F0B60AA10F925610E2A02668F10ECBB90FE6920EEEE0CC5F51'
+    && '503C03D8167191A4E4C136BD19FE0035CE9C91E8D32C95421C'
+    && '810A12125DC306416C2FE1C208F10EF3C0192BB69799510FE9'
+    && '90B07F1D318093162D6592D71B0CE2D01E9512BF9FEC254F89'
+    && 'CBBB8C757AA6C14EC1BD3CFF330F60E90FCAB197F9F00D6F91'
+    && 'C6F9821665541F7D425CC7425C5952CE9FEB311651BBFEB499'
+    && '3571BCF16067FA0065AD5718DBD00CEFE10DF086106A210EF1'
+    && '4ADD175D12AA3A50D5C3DAA69C11EE8C109BA88B634D105C69'
+    && '2E564D108A321FEF1064253218855B0C0CCD13683128034941'
+    && 'BA88E089E62183624395A20F85F620AF46683A013EEBD00E6A'
+    && '3D10DCD3ABC9E7DB3AA16050E60D47B40D24976F156147E250'
+    && 'DB48D1D60B71388A97B3406E1369C9C2D4015E99022CFB3410'
+    && '7EADA7506123877372CFA33EC2D04697C4ABC5D047237B12FE'
+    && 'B60E751888D0B00DDF301EED303CA9939E5F0C848902640871'
+    && 'E15B3111EDD01A43550CAEC87239747227FF570C109E117B6C'
+    && '8C4F8A1099E2218F737111E1671C3E10E800AF061164B9D3C0'
+    && '7CEDBA308510BFE37087D39FDC33D513A16732FCC5F7F016DB'
+    && '300DEB90B526C39503311EB8E20DE4200FCB310EB1E8102579'
+    && '6EC1803C57D4E51851183B42695D348D61AC781525E6A7DC11'
+    && '48246CB62C103A881D10F416FBF00DDB4016C2D895CCFC9C58'
+    && '8A104D461C2A9BE7A296D1CAB03852F30D87730EB66C37F3D0'
+    && '4753CEB13F9B10B293BF44A510CAD2D21B9A0E597281BF5914'
+    && 'B932151C5710954214F1C20C354D10CA0CDD8359166C1318AC'
+    && 'D60DD9E2E95F6D10D20345EB100DD9C06D8631EDA8F73CF89D'
+    && '76E0C1B183C297E06037BA3CC317C11516EF1FAB941B05FFC2'
+    && '5E6617B8C604DEF570DBC1F0ED0751332EF80DC42E49A8E79F'
+    && '7571B36AFD0E99FD1446F2B9CEB1108F240E7E61458D7DAABF'
+    && 'FD1AF1208A56750D8C8195B96441BF035D0F3F368DDEC802EC'
+    && '119B8D5EFB000FE9E0DDEAA997F2A060BF6322BA38108571D0'
+    && '7341165A7D1027D880F04C107B02B95925CC4F81F0B2353301'
+    && '830EDBC00FE7F01D0F625FCDA9ACFBBD7B9F2410540F6BC82B'
+    && 'C8F35CF2F1894BC39385E276174912210A6E10EED00DFA40F1'
+    && '771C3FC754E05BEE1A67F4650DE1ADDD233485034706510D63'
+    && '2F144531307C751195A226DA1064EFF0B5E9F5F00621177BD2'
+    && '0EAF0711B78DDA88CB164F4914F89C1122E698F961EE59790D'
+    && 'DB7086D5FFC2C6D7E8178561B9133E81169141E20B155FE21C'
+    && '0D93DB0E250E6C32D790EE0CCCE11D97D197EF6023ECA09B79'
+    && '024408210D0001EE5C3082050D1E44487059B16B091D3E8418'
+    && '5122416CD62C5EC47871624171E2C6E9E3174C9FB683DC386E'
+    && '2C58AF5EB07CFBF2B50BF62E18CC76E98271836932A14E9407'
+    && '85112C468C58C19F3D8D1E4558D11A33661A91760B168F204C'
+    && '82F982F58B6913623484FBFCCD8BA74FA63E8356572E2358ED'
+    && 'E040A408C11153064E185C630E8BB5C5FB501BB361C8FA2233'
+    && '0A1521D67D04FD258429F8A05587F042A69C97F05B4169790F'
+    && 'D625268D9DB0A0452D4F3C37CD28B360C89821438D0C1B5271'
+    && '832332DE198CDD369E05FFA9BABBA7F52038B5C1867E2E5897'
+    && '5B3563C58A71BE8BB759328336BD11D4E62E99CC6DC174F774'
+    && '0A7C22BF950F9D35B39E8CABC1EEC1C0836B17F91EB889C598'
+    && '4B14668C336769C48ABF9D1BD47842F0370D564F281F74104A'
+    && 'A71E7DA0D16632B682618B1A882CD26E23D81C5A269A73C623'
+    && '08AB82D88950A2BB38136A1963163A2E986AD843A81DAA5092'
+    && 'C9A16D0624A83682269B46B483A68186B49ECE21AB1ED8348C'
+    && 'C81D89D60906C5948C22324261BE69663E613C2BA89F243F4B'
+    && '06AD820A4388480E137AC71D68B621ED9BF70AEAEF206FA031'
+    && '48AA87B08189AC605A9BA8CC0E8FAA8B20619A91EF49F9F21A'
+    && '3318D144DB669BC91012F2A015F5FA72FF1A79FE2B68518400'
+    && '24AFA0C7E68C91D28D4C32AEC4E480E26A193983E1EAB7876C'
+    && '1CF4A1EB82A9479E0511EAA69B6FB671341F20095A499C530F'
+    && '62871E37E7B4CA4A8836B594A06C7C855299827412B5436D64'
+    && 'F4861D34518DACA0EABED992A0E7660D06D2835A34A89F7ED4'
+    && 'FC8C1D70EAAC33D8877E2BCE37638351A6AE0ACD4DE8CB64B6'
+    && '79D6A07B08BA671C400F7A362C2C8349661D79C4F1A6BA5DB9'
+    && '9D10AF86E0EDE9A7278B51469965D062AEBA9CE6F91721285D'
+    && '0B061D38596A8EA06D90A10630DB08020C9CEACEA99624893E'
+    && '3E082A1F094A074686198E061CE39AB1101C72CC6B67E18D80'
+    && '2DA8DE9E205DAD20D4FE83A7200781E3F666783F0D06FFE268'
+    && '7E96CA9868A8B6ECB9B51C4A071B93A51D3BA26DACB149C8A4'
+    && 'A5663B22A1CC23889DA1EE0D669F684D44A83778B5458A5E87'
+    && 'A26EBBED520DAA869B68D6BDC6C887360EBC2D075D26E8E9C6'
+    && 'CD65A74F8396E1061C63B97688F1C93F071DA9A6692E379A5B'
+    && '7BF22B74D55707F82020E54C56A2755987B76CDADBB232F1DB'
+    && '77B77D7784E45C091E20A589869E8C7D473E7984CAAB5BC3C1'
+    && '0DF25C7994AC913E2FE60927C8190CABE79EF56D3A9DCA2019'
+    && '7DEABE7CA9C1E14A6885CC677F750099AB2B193CDBA7BF71CB'
+    && '8D22BA7EFDDBFA1957BEF70720A5A641A4C8942B18CF0B6002'
+    && '23D48FE329D0819472C7AE8AF4400A6AA73B06AC600635B841'
+    && '0E76702E7FCE28C83730E8411216647B2544E1448C96421612'
+    && '045C2D8421C862184304CED08637C4610E1F783F1D6A272000'
+    && '0021F904050A00C1002C12000B00B400E6000008FF0083091C'
+    && '48B0A0C18308132A5CC8D020B28610234A9C48B1A2C58B1833'
+    && '6ADCC8B1A3C78F041F0E44B62D9835902853AA5CB9501CC16D'
+    && 'FD58CA9C49B363BC9A3873EA8CB8AF60BC9E238389DC49B428'
+    && 'CA78F906BE33CAB4A9C76DDFEE058B29705E3D81D09C6ADD7A'
+    && 'B1275084270F0EE54A96A6B760CCB212BC7933A9BFB270E306'
+    && '6B77AEA03B814B05BE95CB9729336DFAF469432835D85B7D13'
+    && 'C7F65D8CB1EEC47106C3329EECB11BC26E54296BAEC94C61E6'
+    && 'CDA08B268DA838B4E986D84EAB96597AB56B96E93E0E7B4DBB'
+    && 'B6ED8F922127B47CBB7743740D112794DCB9B5EFD08E0732C3'
+    && '9657A1E4E3D0839D8D4E7D20BCAB075D56AF5E92DDC6D9DB55'
+    && '8FFF0E4F3E18F07BFE929757FD7561CFBA25D79F963770DEE0'
+    && '96F24D9FD557AF3D45780DC5168F70044D971F4BD320641C44'
+    && '960177503AA91DA8D382774968E1851852145F86397D23D036'
+    && '9D49440D87936927D17324C6755F44D6B4E8628A5C6DD38E40'
+    && '2632D44D6A2D32D3228C70A9479087056DE322333AA2C8E34E'
+    && 'C90814A13EF9E4F3CE4D0279D81C412EBE18D2913B8D065960'
+    && '77D533A2401552698D3627ED180C3758E634DE40236A735F3B'
+    && 'EE6003DC3C02ADC8E640110E94649A387D79E741836DE39D41'
+    && 'DE3059CF550BF2D91135F784995084852D846630002A8A539E'
+    && '0DF939D0361BCE189BA528395891A8043513CC3A0912B427A8'
+    && '7CC5661FA6AC16FF95A8416B2AB46AAC4401291076C1A8A518'
+    && '317B3A73CD321BE25A13AC081163EC66DBDC3A903E832E8BD1'
+    && 'A70A453A107809CDF3D940CE14D4ADB41B515B113F06453B50'
+    && '34C61403AE46BC7564EA40F5F4D34E35D20473CCBA0C8D869D'
+    && 'B812393B90320D1D0330BE771268909D198103119D3EAEDBAE'
+    && '40FBD4A56947D19C33F041EBBCB54E3D88F18AEF601E2B49D0'
+    && 'C41629AB103B0A07334FAD69925A10B5A3C5C63236C8D234E3'
+    && 'BAA2F2230EC2C1A4E38DA6B32EB40C449929530DAB27D56C8F'
+    && '9D2241E36F46CB98BC1094025DCCA1353512A44F3A54679A15'
+    && '3659852C91B2C4A82BB5A4F51E0DAA7F0899D81934D87C43AD'
+    && '31180913119AE6A6F930CF0459FF76DF7DC55E648CDD67131C'
+    && '57E1088D164D864616C43743740AF46E30406D9BEC419327C4'
+    && '2B7693F2684D378F6B1E8CD8FB8CB71746911B5E9136351764'
+    && 'AD4431B17CEE40F5AA5E917043630B513EEB18548C32C40C2D'
+    && '50360A239E61E815F5D4CECD05D93D11B9042D4E9030D7D043'
+    && '0E8C913BEA913BF9409F8F3E110B4FD1BD039D5DCD35245AA3'
+    && '0E94627F647055DCA8DB90C9CA1E5338F904D9BF6B7ED6541A'
+    && 'CCC32B19D437AE42B7E919C478764B503586169F9B592D18B5'
+    && '0B0F36A8218EBBA4236F1F695F3088E121F131A418CB605E41'
+    && '84D32DB51D281FE870994C0CB40E80D52B750491DFBFC8873F'
+    && '7B0D4476A06A9D476068436254A31AF6231B10FF09520D6244'
+    && '50201E5C16F22A321A65A14F20C5205C3116578C62F83086B6'
+    && '53493DD0B4B89848ED87FA339932D4058F41D5308B0B29A042'
+    && '522610362E8418C478A040CE88C683D02D440D01D83AA295B6'
+    && '0F05E368D150063CDCE146135AEA7D0D799A4216D7B9A1A94D'
+    && '6DC740D3CDD8313469A0497FC150D81109D6B8840C435DC610'
+    && '5F5DE8740D6144A31A033B2352BE453EE0B9318BD8E8A4428E'
+    && '363072D08787069146EF0A0230E3A98E75029165D536383465'
+    && '0C0D8ECA62DEBDF8510D3EEE8F88752C880E83A296C579B098'
+    && '02291C3D6AE74139463322CDD8536CB8618C7206C3981B0C86'
+    && 'F3282510B511639DDFBC48E6EA010EE155521AD18806AF2E86'
+    && 'FFC1784AC425CC1089A9901239350A044D49A9C6A492A8105F'
+    && 'A2D14FD3995149B4D18CBC80C354F000871ADFE14D8578138E'
+    && 'D1ECC6C3D251BA3005CE20FAD8E41B13D2511EF1AB2496B94A'
+    && '7FF2710F2739C640C1A0C639BCA1C88B280B9E06B19B323A97'
+    && 'A2D8644D20BCC14EE9BE178C788C131BDAD886A97AEA531B4A'
+    && 'E32A6C8CDC2B3904C0D101E7A8FF1048612C838DA1507523C2'
+    && 'D9C73E2C07230289431C5499A641A6B49025220428EF70D254'
+    && '28D750755EA84975A1C73CF491197454EA71E2C0633DF85510'
+    && '874A4A20C2D1603A39A40D74ACE31CF090C73FE8210F72D5C3'
+    && '25BB448881EA81438274AE78F35356EF1029115D91E74BE7A0'
+    && '475DB497106DFFA805B2EEC85CF90402A579B494238E3D8E08'
+    && 'B5018F767D833E1281553F80824753CD2649129588306428DD'
+    && 'F56CE85621EAE7414ECA1063484F20E88A084879745B815023'
+    && '49067A08343A63578974A6190C0DAB42CE11A6F1A6081E1D7C'
+    && '59AF885BA7111D3521DC4588F00C75C38629A41DB8BC5C7504'
+    && '589010A1633044EA064E15E227614A2E18493295A9E8D1B3AE'
+    && '4131A8BB625B411406D4E3EC2382A40DC6609C3610D7E23121'
+    && 'E55DC84344628C7769CFA00AA9873FBE3BE2D16DC7B5EEE889'
+    && '704AC2AFAC4023C60771ED42A61AC318E378210AB3DAC5EA45'
+    && 'D4E3C4A72D03D14D329A81C7242D0319412B886E0F9224673D'
+    && '99210F944670A1135A116F23FF419CDA3286B192104D890B1A'
+    && '88C1E332CE8A4673A14F2449FA4698A944327434E3C807CB49'
+    && '895D838E548D2EC5C168D2E9303C8C244D233EC93046321483'
+    && '2C2EC767C81B32958F1CC35DEFA6291AF788574C104C2BBA06'
+    && '43D3E17CB54162F3E26C2967523C8EDEEC04D2C460E41A4654'
+    && 'FBAE54A3B18D7434C3548C4DC88409B20E112E241A4734E440'
+    && 'AA8C90639C6F3DAB354812B5CB57837C097A75326FB8B1C10C'
+    && '921D641963A625430BA82C655CE389E101126BD5E9C17C4029'
+    && '19B1A94BFBA071DEACF484C8722D48A689D5D76C04C35CCB38'
+    && 'A5DABE451086AF477ED740D33B6262C93107C354ED10315A02'
+    && '6C113A111BBCA3E3069A00968D6B80031CE6FFB8C63ACE7C1C'
+    && '652C45B70C0D863EF8112D744364AA1CBF70CAA8B8386578E8'
+    && '1B8B5BEB39CF893E690C4C78718C78680FC28D3DBF2689C9F6'
+    && '17B897A13B8674C6DC03B9ED9E92D12CDD7C031EF1519839DB'
+    && 'E9D76054B1ECDA3EF87170BCD58BF869EBCD30B0C083D1AC75'
+    && '94F9BBF900C7D1A651E384F34338C220C635A261B277D90D31'
+    && 'C95E8F6B8FB6A1982BC4E205814601259F95732CC35CF1B907'
+    && '37A2D10C7D02A5196BCECF6F0FB83081C81D2F188EF932E47D'
+    && '9073D46B1FF316C8A2FD299D8274031A13E614A7C4DCE2787D'
+    && 'CFF279E3737546EF3B884CBA19DBB8CB59B2B28D6AC4477A79'
+    && '5AF641DED21F830C2E8B7A3EC8CA3EB579BAB7A319DC5032FF'
+    && '992F3C1079F4A456CB18BBA5883F90732C7D20FB307641BEC1'
+    && '8D74C4274FEFC57001F59D19ECC463D2E7C47E96E241619571'
+    && '0CC135742610AD514087B25C544115CE667319425D16B138D1'
+    && 'E01DEEE06CED8026BB073122D35E5A530FF1801DB4052AD246'
+    && '100C256730160CD880262BE33F9B921074B327ED8014D8117B'
+    && 'F2317B0A56100CA50FD160720C111FEF5029902710440266C9'
+    && '900CC32037FDE10FFC700F4CA20FC7A669E0522FECB04B2591'
+    && '0F00A2770AB10CC4C20D00522C3A640C43610CC3D00C48E10F'
+    && 'F00080C1E070E11173D49610BF033054D174DFE05474D70CE2'
+    && '373A75211220427716810EF5C00F4EC886F9315D66B741BEE4'
+    && '5806D762FAFFF56B992414C8777115910CDEB00DC8402DDB00'
+    && '0FCD511248A680D1610CEF076203C13C56B350DFA57E069124'
+    && 'EB706459B122B50616D31050EFB20E98880DF1B10FF0C062AB'
+    && 'A82780E81AC4F00EFCC110C6532F93944D02B10ECEC00D2A95'
+    && '104948109F881071562AA8770FE41260AE160C8E761AEB900F'
+    && 'FD7015C0438107210CF5321EA6223D82470F94942471186BD0'
+    && '104ED1081165A51CEA9520CD207DA3130D677113F780296701'
+    && '825CA130331239F5804A32D473B40372A4958D07A73649124A'
+    && '91F72E468611600625DAD030FE723AD40219DCD00FFD301ADF'
+    && '808F83A613572142F7C061D9240CDF804A86D40EFC311A6C54'
+    && '38F6B40C14880C49B20D00FF2929C7361E7108598EF10D0402'
+    && '1C03241D493218DF700EBA511625C60DEB703467173D26733D'
+    && 'CAD20F5DE3921F361055043CDC10471EB438C2372D75721FEC'
+    && 'A086A3C30EECB026FFF51238E81456541F89681000421F8D68'
+    && '4986743626137865936B6658699488161621553D731004C25D'
+    && 'F3B00FDB8053D4308A2CF81307B518C2600C4AA62EC04310F0'
+    && '4610D4124756243CBDA32C9474268B930E9AF6950DA12BDCE5'
+    && '6801A7100CD3178FA9106E686F098938932935ECD00CDCB40C'
+    && 'D57033680811B1718302011C839114DFB02130285A15D10D2E'
+    && '013A4EE186C81811F0D00E939949EE763D58740C6993608A69'
+    && '10E2B00DA9F30D33528290A57606E16CE1FF461176A27139F1'
+    && '34A7479903B155CA607081178958D94BD5B0858B739B322710'
+    && 'CEE23380D83BDE000FDE301888F729E990602A818B02219E4D'
+    && '117A0361486A734ACB494B430772E079103D9139FCF03339D5'
+    && '2BA3212A898713319173A7D1318B530FCAE018D2C30D113323'
+    && 'CD903A25A164CDB08D21D22ED8705441A30DF898118BF53F1E'
+    && '33923AA18303115A29532F34790CE0A02C039A3AE0906B00A2'
+    && '2B106210A74914C2E10E885914E2B84807C10FA9C30D17B30D'
+    && 'DF950EAEA60CC503A602710D65A64658371320CA0E6A85275B'
+    && 'E1A38D951011140D0AF315CAB0386E04304343A6B2E79512A1'
+    && '42337116FF180C4F781C6E343962CA4BF74236F5B22AD1FF20'
+    && '9D71E13748A50EC8B9148FC3A33AC17248B44E25B1743D9136'
+    && '26D442A824545EE6A6709912EDB20F22381063F20EEAE0207E'
+    && '5A160ACA10E7203DA3C10D47D339463430C9C0410228133065'
+    && '1297A16202D1A14541AA0751A56537394035282D952E119710'
+    && '3D7116C3491005C45D7781297CD32EB4A50D72F30E694914C8'
+    && '3A8E1101309373823E162597B30F3D591086F81207919448F5'
+    && 'AD03710F96013DEF701F1EC6147663AC13D12DC12515E9602D'
+    && '8821991ED897036168E5970F9FA20DE9001F11719C17897A80'
+    && '527B7CC1AF13010E00E3A8115A100F6818C2A130B77A349333'
+    && '8990080E52D50E9C720E2B222A15E212F7001976D21C4F3A19'
+    && 'DC2611C2FF03302D7943B203B217F34A27652A4FC40DC35075'
+    && '4D4510D31A1796CA12653310CD700CB9F616F9F016742259D4'
+    && 'DA79D2346705810C6A910CD7591165124C06D1555B016E8213'
+    && '4755B34BD2000EA6631890553ADD9512F0CA105562611341B7'
+    && '5A71440F1429FDE00F96337204A141206A2311920E620B1655'
+    && '12191D41B416910F04BA8303813E0353173F3410FC100F1ED9'
+    && '0FE4E20FFFA0B91ED92449910D2614B815F176B76561736B25'
+    && '67DA14EB1A1151133590C85B53F191FDB0B949C10FA5D51039'
+    && '870CA6820CB1E8B5875B671991B4287134CE600CECC70DDFA3'
+    && '0FFE102FB662AE06310ED3A0B8CCD0559A22AF864BB776CB10'
+    && 'C28B1129835CC420A7F0FF42B9067113EFB00FD08383DC5099'
+    && 'DBC50FF2B08DAAEA11D94B91057112DBAB1105090EEC500D0E'
+    && 'CA4629030ED4763A88341A206440A5320EFE400FEA0B8AC612'
+    && '136F510D75110D14980EF0100D8E779F844139E6397FEECBB4'
+    && 'E81A1AF52B87C1A0B1E149156D57B40BF13A04E123C590C010'
+    && 'E10EAF7A210F043C00F3BA14E11F1E143C93720DDA158F052B'
+    && 'ABD441BC09C10E2C4C1088A3775DBB9E06E746C7803EC2804E'
+    && '7674608D7BB5D0713495198708EA5872CA50E659C11201256B'
+    && 'C9C114D10DF92023A7712FEC2015AB8B10076910FFF048ED47'
+    && 'AD8B4B39FAE00E549B0E0A5B65F1F10DDFD025F9A00DDAC12B'
+    && '1512BF4D512FEF1411E17A10DBC25025FF0C11ED7028FE0140'
+    && '916260A2A2572EF10EE0F60EE8700FF6C00F4BA311C3D0BB68'
+    && 'B518C6B0C1C1E00EEF50534B455A738C938917554A910E2EE1'
+    && 'A5C0FA2C08A10DC8E5111FBC5BC180C20361B12563B1D7F90E'
+    && '70A256DEE80FFC114E81730F1E0215D6612AF0CAB0769214BE'
+    && '295604919359ABC015410C0A53A4587495BAAC153AF88DF570'
+    && 'B4AA421F38B5538E7310F5405BF620100062BD3871C868B712'
+    && 'F26C509888100698107991942F5C1079111B152252BD8914F9'
+    && '9027339B13552ACF39B1211ED239EEC0CB143B18E800CBA292'
+    && '4203D10D0EF2292E5117EA4026640130B1712F004381E1EACB'
+    && '12A1D00A416DB7BCCB2B7368B7A53DBD4B539156CB83FF3125'
+    && '373ABC3F92C63A11C30C81A005D27ABF381006F238C23123F5'
+    && '800E98319E9F72BB2C9132756135B1BA13268B10BD632A6701'
+    && '92E3B920811A209AFC0E6F911C49D113C739BA143182CE2678'
+    && '1981D20C91AF053123FE5384B6979637221DE3C00EFC504603'
+    && 'F1AD0C49CD0D51B8130124AF2472BD9A135DC94671E846EC50'
+    && '0FEFD02CEF6220F9F00DEB9584DC1050E490288EF15F6EE223'
+    && 'C4BA11F310D8EA740DCE203F6A5D13D4959EF8F90D19C6B4E7'
+    && 'A0BB09010E82E647D2E12BA5616EDED00D767CCB9525AC6DA3'
+    && '11DCE0BF5223431B6CD2635345CD984993120F6C6D10B31192'
+    && '905D123713508739ACF731229D8147A501CAD53C1083610F96'
+    && '61BDE5FF7B11CBE03C88D40C179570DC1039E14AB50D31C4AE'
+    && '5313A56B118F531792F10E3A0640A593DC3F1211D1F00D4343'
+    && '9DDBC0D4E786109F91A405D13B0363426C95763A3131E63618'
+    && '612161D92DB684651E0BA10FA46C1D1EF9A3BF36348DB810C3'
+    && '103C0601D1707A1CD334C9C1E021026D105FC70EBC6B7DF057'
+    && 'CAA94327AC1641C5CD63342910D102835F01E05A3114B94C11'
+    && 'EE103A373A395D733A096E10ECAD10EFE3BCFDA21AF7302563'
+    && '62C22598BA02113B50E2B66C63AE9D336FD4C6E49321C84493'
+    && '17E26019EAA062B4D5CF6F9C14F5F0E453BB5705E1E5AAC3E3'
+    && '48B55D06C10F22C8B8F7D0137B0B9F082136F960DAAEA10D0B'
+    && '02E6B412D00C3161A9FF725175215F4DF5DDD074A05E4EC53F'
+    && 'B82CE2700FD6922703DA9B1081189F911448D1131E030E3751'
+    && 'C2709E26F701194E4535533284A45223E2D30F4B41586C831D'
+    && '253965556E382E711F1B23735601D481C93737D113484110E8'
+    && '21A80371E4BE36C327AD10C2CD1190FD2E80DE112E011CE0C6'
+    && '2B3824E203310DDE808F4B81A0DF3046A39D46586911E11A0D'
+    && 'C3C072D8D03B33C23ADF102113F3E30681E6D582DFC1200FCA'
+    && 'B946829A0F0BC411C22DCFFD80181EE2311BD20F1582AFF090'
+    && '27DFE0128A6D102BBD138DBC10F4A030994320D140205F5416'
+    && '24AA1217357FC592739F08CAFC811D728E10E730237BC84B65'
+    && '911C83DD628EB12A6B0224C2C03C76FF82B206116A8A090EB5'
+    && '360F512CB1FFD3108B73F2B4014FB568B0B4EC6ADE49101102'
+    && '0DC95112719B539B2D3BFA40EF64E6231EB2C84DB1F26F5C7B'
+    && '97A8104BE7D3C14057DAE00E9FC236F9E00DD1FE9DBC92C108'
+    && '115EF7194871012407EEAE1E61A0380E0DE850175DEB0DDF00'
+    && '14A9B2A616E10F6B320E640B114F740E96B66BE01A45C1203E'
+    && '4062AED500F40801F9887F434A910C23621C57F1D82DB6D8B5'
+    && 'F7190B4F207BCD10DF80A90471EEAB3913C6400CC61B3C4393'
+    && '193CEEA56BD21F54C32BA1E521D8DD603D0390153231EE7012'
+    && '35851DF25E10356B14BD0354EBC00D0589C1565FFA14515A63'
+    && '7152D470D30BC1E8D2210FE730F27DE10C77296BE6FF648ED7'
+    && '70342C47C3B5657A1D0CDB57F210DF008249C20CE8B00FA4B2'
+    && '0D84F80FE3E0ADDE200F4DBF1A32A446997F28E0D05900012E'
+    && 'D84082050D1E4498B02034850D13521B982CE2C078FAC60D44'
+    && '166C9A438E1D3D7E74D82C98C460DBA2451B786C20CA60DCAE'
+    && '81841953A6C2740CB1CDC499B3E3B984DC827DAB46B0DA329D'
+    && '458D1E459A34A1B16041099EEB47906836624A7366B49A556B'
+    && 'D17AEFA26E0B068E98B2604CB79E3DCA0CED59762407EAF357'
+    && '309A32A26BEDC2C47A576FB07BFBF2E56B698C5BBCBD850D17'
+    && 'DE4890303F82FBC2F23C1C59F25DC2C1A2890CA60CF364CE9D'
+    && '93C65B172C9B65A906991613E659F56A841BCF4513C85AF66C'
+    && '8F2F6DA3150BD6CC2C6DDA797923DCFD5BF8EC7BA4871FE7CD'
+    && '78E037E4CD55F38CBA8EA573EA91BFF9D3D78FDDC097CEAA7F'
+    && 'D7FBCEA05BF0E5ED6E369FFE3CE66B75D5BF57EA14FE7CABE4'
+    && 'E8DF47CAEE1F3CFCFD7192E3E71F7F9833CE3F031D628A1F79'
+    && '0E64B023EFCE41AF41BD0202003B'.
+
+    DATA(lt_solix) = cl_bcs_convert=>xstring_to_solix( lv_xstring ).
+    lo_html_picture->load_data( EXPORTING
+                                  type                   = 'image'
+                                  subtype                = 'gif'
+                                IMPORTING
+                                  assigned_url           = lv_assigned_url
+                                CHANGING
+                                  data_table             = lt_solix
+                                EXCEPTIONS
+                                  dp_invalid_parameter   = 1                " invalid parameter in a DP call
+                                  dp_error_general       = 2                " gerneral error in a DP call
+                                  cntl_error             = 3                " error
+                                  html_syntax_notcorrect = 4                " HTML data is invalid and check all the tags' syntax
+                                  OTHERS                 = 5
+                              ).
+    lo_html_picture->show_url( lv_assigned_url ).
+  ENDMETHOD.
+ENDCLASS.
+
+FORM build_fieldcat USING  width TYPE i
+                    TABLES fcat  TYPE lvc_t_fcat
+                           table TYPE STANDARD TABLE.
+  DATA: lr_data TYPE REF TO data.
+  FIELD-SYMBOLS: <lt_table> TYPE STANDARD TABLE.
+
+  CREATE DATA lr_data LIKE table.
+  ASSIGN lr_data->* TO <lt_table>.
+  TRY.
+      cl_salv_table=>factory( IMPORTING
+                                r_salv_table   = DATA(lo_salv)
+                              CHANGING
+                                t_table        = <lt_table> ).
+      fcat   = cl_salv_controller_metadata=>get_lvc_fieldcatalog( r_columns      = lo_salv->get_columns( )
+                                                                  r_aggregations = lo_salv->get_aggregations( ) ).
+
+
+    CATCH cx_salv_msg.
+      RETURN.
+  ENDTRY.
+  LOOP AT fcat ASSIGNING FIELD-SYMBOL(<ls_fcat>).
+    IF sy-tabix > width.
+      <ls_fcat>-tech   = 'X'.
+    ENDIF.
+  ENDLOOP.
+
+  CLEAR width.
+
+ENDFORM.
+
+FORM create_trunk USING    y    TYPE i
+                  CHANGING data TYPE ghost_of_christmas=>mtt_data.
+  CONSTANTS: lc_parallel TYPE i VALUE 1.
+  DO 9 TIMES.
+    DATA(lv_y) = sy-index.
+      APPEND VALUE #( x = mc_middle
+                      y = y + lv_y
+                      color = c_color_trunk
+                      intensified = 1
+                     ) TO data.
+      DO lc_paral1el TIMES. " 1 to the left +  1 to the right next to middle = Trunk has width 3
+        APPEND VALUE #( x = mc_middle + sy-index
+                        y = y + lv_y
+                        color = c_color_trunk
+                        intensified = 1
+                       ) TO data.
+        APPEND VALUE #( x = mc_middle - sy-index
+                        y = y + lv_y
+                        color = c_color_trunk
+                        intensified = 1
+                       ) TO data.
+    ENDDO.
+  ENDDO.
+ENDFORM.
+
+FORM create_branches USING    iv_y TYPE i
+                              iv_width TYPE i
+                     CHANGING ct_data TYPE ghost_of_christmas=>mtt_data.
+  DATA: lv_y,
+        lv_internal_width TYPE i,
+        lv_color          TYPE i,
+        lv_intensified    TYPE i.
+
+  lv_y = lv_y + 1.
+  INSERT VALUE #( x = mc_middle
+                  y = iv_y + lv_y
+                  color = c_color_trunk
+                    intensified = 1
+                 ) INTO TABLE ct_data.
+  DO iv_width TIMES.
+    lv_internal_width = sy-tabix.
+    lv_y = lv_y + 1.
+    INSERT VALUE #( x = mc_middle
+                    y = iv_y + lv_y
+                    color = c_color_branch
+                    intensified = 1
+                   ) INTO TABLE ct_data.
+    DO lv_internal_width TIMES.
+      IF sy-index = lv_internal_width - 1 AND sy-index MOD 3 = 0.
+        lv_color = c_color_candle.
+        lv_intensified = 0.
+      ELSE.
+        lv_color = c_color_branch.
+        lv_intensified = 1.
+      ENDIF.
+      INSERT VALUE #( x = mc_middle + sy-tabix
+                      y = iv_y + lv_y
+                      color = lv_color
+                    intensified = lv_intensified
+                     ) INTO TABLE ct_data.
+      INSERT VALUE #( x = mc_middle - sy-index
+                      y = iv_y + lv_y
+                      color = lv_color
+                      intensified = lv_intensified
+                     ) INTO TABLE ct_data.
+    ENDDO.
+*
+  ENDDO.
+ENDFORM.
+FORM test. WRITE 'Test  Test  Test  Test  Test  ' COLOR 7. ENDFORM.
+
+FORM red_herring.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form initialization
+*&---------------------------------------------------------------------*
+FORM initialization .
+  APPEND NEW ghost_of_christmas_past( )    TO christmas.
+  APPEND NEW ghost_of_christmas_to_come( )   TO christmas.
+  APPEND NEW ghost_of_christmas_present( )   TO christmas.
+  APPEND NEW ghost_of_christmas_present( ) TO christmas.
+
+ENDFORM.
